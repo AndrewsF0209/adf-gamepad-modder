@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>AdfConfigurator</AssemblyName>
+    <RootNamespace>AdfConfigurator</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Ship SDL3.dll next to the configurator if native build has run. -->
+  <ItemGroup>
+    <None Include="..\artifacts\x64\SDL3.dll"
+          Condition="Exists('..\artifacts\x64\SDL3.dll')"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="SDL3.dll" />
+  </ItemGroup>
+
+</Project>

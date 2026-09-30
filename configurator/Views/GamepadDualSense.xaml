@@ -1,0 +1,333 @@
+<UserControl x:Class="AdfConfigurator.Views.GamepadDualSense"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Width="900" Height="260">
+    <UserControl.Resources>
+        <SolidColorBrush x:Key="Line" Color="#1565c0"/>
+        <Style x:Key="Act" TargetType="TextBlock">
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="TextAlignment" Value="Center"/>
+            <Setter Property="Foreground" Value="#0f9d47"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding ActionText}" Value="—">
+                    <Setter Property="Foreground" Value="#b9c6d6"/>
+                    <Setter Property="FontWeight" Value="Normal"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="Glyph" TargetType="TextBlock">
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="TextAlignment" Value="Center"/>
+            <Setter Property="Foreground" Value="#1565c0"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+        </Style>
+        <Style x:Key="HitCircle" TargetType="Button">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Ellipse x:Name="bg" Fill="Transparent"/>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bg" Property="Fill" Value="#d8e8fb"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bg" Property="Fill" Value="#aecdf3"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="HitPill" TargetType="Button">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Border x:Name="bg" Background="Transparent"/>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bg" Property="Background" Value="#d8e8fb"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bg" Property="Background" Value="#aecdf3"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Canvas>
+        <!-- ============ triggers L2/R2: bound on the 扳机 tab ============ -->
+        <Border Canvas.Left="10" Canvas.Top="14" Width="86" Height="48" CornerRadius="12"
+                Background="#f2f6fb" BorderBrush="{StaticResource Line}" BorderThickness="2.5">
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="L2" Style="{StaticResource Glyph}" FontSize="12"/>
+                <TextBlock Text="扳机页" FontSize="7" Foreground="#9fb3cc"
+                           HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+        <Border Canvas.Left="804" Canvas.Top="14" Width="86" Height="48" CornerRadius="12"
+                Background="#f2f6fb" BorderBrush="{StaticResource Line}" BorderThickness="2.5">
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="R2" Style="{StaticResource Glyph}" FontSize="12"/>
+                <TextBlock Text="扳机页" FontSize="7" Foreground="#9fb3cc"
+                           HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+
+        <!-- ============ L1(9) / R1(10) ============ -->
+        <Border Canvas.Left="10" Canvas.Top="142" Width="86" Height="48" CornerRadius="12"
+                Background="White" BorderBrush="{StaticResource Line}" BorderThickness="2.5"/>
+        <Button Canvas.Left="10" Canvas.Top="142" Width="86" Height="48"
+                Style="{StaticResource HitPill}"
+                DataContext="{Binding ButtonRows[9]}" ToolTip="{Binding Label}"
+                Command="{Binding DataContext.StartCapture,
+                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                CommandParameter="{Binding}">
+            <StackPanel MaxWidth="82">
+                <TextBlock Text="L1" Style="{StaticResource Glyph}" FontSize="10"/>
+                <TextBlock Style="{StaticResource Act}" FontSize="9"
+                           TextTrimming="CharacterEllipsis" Text="{Binding ActionText}"/>
+            </StackPanel>
+        </Button>
+        <Border Canvas.Left="804" Canvas.Top="142" Width="86" Height="48" CornerRadius="12"
+                Background="White" BorderBrush="{StaticResource Line}" BorderThickness="2.5"/>
+        <Button Canvas.Left="804" Canvas.Top="142" Width="86" Height="48"
+                Style="{StaticResource HitPill}"
+                DataContext="{Binding ButtonRows[10]}" ToolTip="{Binding Label}"
+                Command="{Binding DataContext.StartCapture,
+                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                CommandParameter="{Binding}">
+            <StackPanel MaxWidth="82">
+                <TextBlock Text="R1" Style="{StaticResource Glyph}" FontSize="10"/>
+                <TextBlock Style="{StaticResource Act}" FontSize="9"
+                           TextTrimming="CharacterEllipsis" Text="{Binding ActionText}"/>
+            </StackPanel>
+        </Button>
+
+        <!-- ============ d-pad center (200,120): 11U 14R 12D 13L ============ -->
+        <Path Stroke="{StaticResource Line}" StrokeThickness="2.5" StrokeLineJoin="Round"
+              Fill="White"
+              Data="M 183,66 L 217,66 L 217,103 L 254,103 L 254,137 L 217,137 L 217,174
+                    L 183,174 L 183,137 L 146,137 L 146,103 L 183,103 Z"/>
+        <Button Canvas.Left="176" Canvas.Top="62" Width="48" Height="44"
+                Style="{StaticResource HitCircle}"
+                DataContext="{Binding ButtonRows[11]}" ToolTip="{Binding Label}"
+                Command="{Binding DataContext.StartCapture,
+                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                CommandParameter="{Binding}">
+            <StackPanel MaxWidth="46">
+                <TextBlock Text="↑" Style="{StaticResource Glyph}" FontSize="10"/>
+                <TextBlock Style="{StaticResource Act}" FontSize="8"
+                           TextTrimming="CharacterEllipsis" Text="{Binding ActionText}"/>
+            </StackPanel>
+        </Button>
+        <Button Canvas.Left="216" Canvas.Top="98" Width="48" Height="44"
+                Style="{StaticResource HitCircle}"
+                DataContext="{Binding ButtonRows[14]}" ToolTip="{Binding Label}"
+                Command="{Binding DataContext.StartCapture,
+                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                CommandParameter="{Binding}">
+            <StackPanel MaxWidth="46">
+                <TextBlock Text="→" Style="{StaticResource Glyph}" FontSize="10"/>
+                <TextBlock Style="{StaticResource Act}" FontSize="8"
+                           TextTrimming="CharacterEllipsis" Text="{Binding ActionText}"/>
+            </StackPanel>
+        </Button>
+        <Button Canvas.Left="176" Canvas.Top="134" Width="48" Height="44"
+                Style="{StaticResource HitCircle}"
+                DataContext="{Binding ButtonRows[12]}" ToolTip="{Binding Label}"
+                Command="{Binding DataContext.StartCapture,
+                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                CommandParameter="{Binding}">
+            <StackPanel MaxWidth="46">
+                <TextBlock Text="↓" Style="{StaticResource Glyph}" FontSize="10"/>
+                <TextBlock Style="{StaticResource Act}" FontSize="8"
+                           TextTrimming="CharacterEllipsis" Text="{Binding ActionText}"/>
+            </StackPanel>
+        </Button>
+        <Button Canvas.Left="136" Canvas.Top="98" Width="48" Height="44"
+                Style="{StaticResource HitCircle}"
+                DataContext="{Binding ButtonRows[13]}" ToolTip="{Binding Label}"
+                Command="{Binding DataContext.StartCapture,
+                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                CommandParameter="{Binding}">
+            <StackPanel MaxWidth="46">
+                <TextBlock Text="←" Style="{StaticResource Glyph}" FontSize="10"/>
+                <TextBlock Style="{StaticResource Act}" FontSize="8"
+                           TextTrimming="CharacterEllipsis" Text="{Binding ActionText}"/>
+            </StackPanel>
+        </Button>
+
+        <!-- ============ SHARE(4) / touchpad(20) / OPTIONS(6) ============ -->
+        <Border Canvas.Left="296" Canvas.Top="48" Width="78" Height="38" CornerRadius="10"
+                Background="White" BorderBrush="{StaticResource Line}" BorderThickness="2.5"/>
+        <Button Canvas.Left="296" Canvas.Top="48" Width="78" Height="38"
+                Style="{StaticResource HitPill}"
+                DataContext="{Binding ButtonRows[4]}" ToolTip="{Binding Label}"
+                Command="{Binding DataContext.StartCapture,
+                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                CommandParameter="{Binding}">
+            <StackPanel MaxWidth="74">
+                <TextBlock Text="SHARE" Style="{StaticResource Glyph}" FontSize="8"/>
+                <TextBlock Style="{StaticResource Act}" FontSize="8"
+                           TextTrimming="CharacterEllipsis" Text="{Binding ActionText}"/>
+            </StackPanel>
+        </Button>
+        <Border Canvas.Left="378" Canvas.Top="2" Width="144" Height="84" CornerRadius="14"
+                Background="White" BorderBrush="{StaticResource Line}" BorderThickness="2.5"/>
+        <Button Canvas.Left="378" Canvas.Top="2" Width="144" Height="84"
+                Style="{StaticResource HitPill}"
+                DataContext="{Binding ButtonRows[20]}" ToolTip="{Binding Label}"
+                Command="{Binding DataContext.StartCapture,
+                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                CommandParameter="{Binding}">
+            <StackPanel MaxWidth="140">
+                <TextBlock Text="触控板" Style="{StaticResource Glyph}" FontSize="10"/>
+                <TextBlock Style="{StaticResource Act}" FontSize="9"
+                           TextTrimming="CharacterEllipsis" Text="{Binding ActionText}"/>
+            </StackPanel>
+        </Button>
+        <Border Canvas.Left="526" Canvas.Top="48" Width="78" Height="38" CornerRadius="10"
+                Background="White" BorderBrush="{StaticResource Line}" BorderThickness="2.5"/>
+        <Button Canvas.Left="526" Canvas.Top="48" Width="78" Height="38"
+                Style="{StaticResource HitPill}"
+                DataContext="{Binding ButtonRows[6]}" ToolTip="{Binding Label}"
+                Command="{Binding DataContext.StartCapture,
+                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                CommandParameter="{Binding}">
+            <StackPanel MaxWidth="74">
+                <TextBlock Text="OPTIONS" Style="{StaticResource Glyph}" FontSize="8"/>
+                <TextBlock Style="{StaticResource Act}" FontSize="8"
+                           TextTrimming="CharacterEllipsis" Text="{Binding ActionText}"/>
+            </StackPanel>
+        </Button>
+
+        <!-- ============ PS(5) / mic(15) ============ -->
+        <Ellipse Canvas.Left="422" Canvas.Top="112" Width="56" Height="56"
+                 Fill="White" Stroke="{StaticResource Line}" StrokeThickness="2.5"/>
+        <Button Canvas.Left="422" Canvas.Top="112" Width="56" Height="56"
+                Style="{StaticResource HitCircle}"
+                DataContext="{Binding ButtonRows[5]}" ToolTip="{Binding Label}"
+                Command="{Binding DataContext.StartCapture,
+                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                CommandParameter="{Binding}">
+            <StackPanel MaxWidth="52">
+                <TextBlock Text="PS" Style="{StaticResource Glyph}" FontSize="9"/>
+                <TextBlock Style="{StaticResource Act}" FontSize="8"
+                           TextTrimming="CharacterEllipsis" Text="{Binding ActionText}"/>
+            </StackPanel>
+        </Button>
+        <Ellipse Canvas.Left="436" Canvas.Top="184" Width="28" Height="28"
+                 Fill="White" Stroke="{StaticResource Line}" StrokeThickness="2"/>
+        <Button Canvas.Left="436" Canvas.Top="184" Width="28" Height="28"
+                Style="{StaticResource HitCircle}"
+                DataContext="{Binding ButtonRows[15]}" ToolTip="{Binding Label}"
+                Command="{Binding DataContext.StartCapture,
+                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                CommandParameter="{Binding}">
+            <StackPanel MaxWidth="26">
+                <TextBlock Text="MIC" Style="{StaticResource Glyph}" FontSize="5"/>
+                <TextBlock Style="{StaticResource Act}" FontSize="6"
+                           TextTrimming="CharacterEllipsis" Text="{Binding ActionText}"/>
+            </StackPanel>
+        </Button>
+
+        <!-- ============ symbols: △(3) ○(1) ×(0) □(2) ============ -->
+        <Ellipse Canvas.Left="696" Canvas.Top="62" Width="48" Height="48"
+                 Fill="White" Stroke="{StaticResource Line}" StrokeThickness="2.5"/>
+        <Button Canvas.Left="696" Canvas.Top="62" Width="48" Height="48"
+                Style="{StaticResource HitCircle}"
+                DataContext="{Binding ButtonRows[3]}" ToolTip="{Binding Label}"
+                Command="{Binding DataContext.StartCapture,
+                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                CommandParameter="{Binding}">
+            <StackPanel MaxWidth="46">
+                <TextBlock Text="△" Style="{StaticResource Glyph}" FontSize="11"/>
+                <TextBlock Style="{StaticResource Act}" FontSize="8"
+                           TextTrimming="CharacterEllipsis" Text="{Binding ActionText}"/>
+            </StackPanel>
+        </Button>
+        <Ellipse Canvas.Left="736" Canvas.Top="96" Width="48" Height="48"
+                 Fill="White" Stroke="{StaticResource Line}" StrokeThickness="2.5"/>
+        <Button Canvas.Left="736" Canvas.Top="96" Width="48" Height="48"
+                Style="{StaticResource HitCircle}"
+                DataContext="{Binding ButtonRows[1]}" ToolTip="{Binding Label}"
+                Command="{Binding DataContext.StartCapture,
+                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                CommandParameter="{Binding}">
+            <StackPanel MaxWidth="46">
+                <TextBlock Text="○" Style="{StaticResource Glyph}" FontSize="11"/>
+                <TextBlock Style="{StaticResource Act}" FontSize="8"
+                           TextTrimming="CharacterEllipsis" Text="{Binding ActionText}"/>
+            </StackPanel>
+        </Button>
+        <Ellipse Canvas.Left="696" Canvas.Top="130" Width="48" Height="48"
+                 Fill="White" Stroke="{StaticResource Line}" StrokeThickness="2.5"/>
+        <Button Canvas.Left="696" Canvas.Top="130" Width="48" Height="48"
+                Style="{StaticResource HitCircle}"
+                DataContext="{Binding ButtonRows[0]}" ToolTip="{Binding Label}"
+                Command="{Binding DataContext.StartCapture,
+                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                CommandParameter="{Binding}">
+            <StackPanel MaxWidth="46">
+                <TextBlock Text="×" Style="{StaticResource Glyph}" FontSize="11"/>
+                <TextBlock Style="{StaticResource Act}" FontSize="8"
+                           TextTrimming="CharacterEllipsis" Text="{Binding ActionText}"/>
+            </StackPanel>
+        </Button>
+        <Ellipse Canvas.Left="656" Canvas.Top="96" Width="48" Height="48"
+                 Fill="White" Stroke="{StaticResource Line}" StrokeThickness="2.5"/>
+        <Button Canvas.Left="656" Canvas.Top="96" Width="48" Height="48"
+                Style="{StaticResource HitCircle}"
+                DataContext="{Binding ButtonRows[2]}" ToolTip="{Binding Label}"
+                Command="{Binding DataContext.StartCapture,
+                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                CommandParameter="{Binding}">
+            <StackPanel MaxWidth="46">
+                <TextBlock Text="□" Style="{StaticResource Glyph}" FontSize="11"/>
+                <TextBlock Style="{StaticResource Act}" FontSize="8"
+                           TextTrimming="CharacterEllipsis" Text="{Binding ActionText}"/>
+            </StackPanel>
+        </Button>
+
+        <!-- ============ L3(7) center (335,208) / R3(8) center (625,208) ============ -->
+        <Ellipse Canvas.Left="299" Canvas.Top="172" Width="72" Height="72"
+                 Fill="White" Stroke="{StaticResource Line}" StrokeThickness="2.5"/>
+        <Button Canvas.Left="299" Canvas.Top="172" Width="72" Height="72"
+                Style="{StaticResource HitCircle}"
+                DataContext="{Binding ButtonRows[7]}" ToolTip="{Binding Label}"
+                Command="{Binding DataContext.StartCapture,
+                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                CommandParameter="{Binding}">
+            <StackPanel MaxWidth="68">
+                <TextBlock Text="L3" Style="{StaticResource Glyph}" FontSize="10"/>
+                <TextBlock Style="{StaticResource Act}" FontSize="9"
+                           TextTrimming="CharacterEllipsis" Text="{Binding ActionText}"/>
+            </StackPanel>
+        </Button>
+        <Ellipse Canvas.Left="589" Canvas.Top="172" Width="72" Height="72"
+                 Fill="White" Stroke="{StaticResource Line}" StrokeThickness="2.5"/>
+        <Button Canvas.Left="589" Canvas.Top="172" Width="72" Height="72"
+                Style="{StaticResource HitCircle}"
+                DataContext="{Binding ButtonRows[8]}" ToolTip="{Binding Label}"
+                Command="{Binding DataContext.StartCapture,
+                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                CommandParameter="{Binding}">
+            <StackPanel MaxWidth="68">
+                <TextBlock Text="R3" Style="{StaticResource Glyph}" FontSize="10"/>
+                <TextBlock Style="{StaticResource Act}" FontSize="9"
+                           TextTrimming="CharacterEllipsis" Text="{Binding ActionText}"/>
+            </StackPanel>
+        </Button>
+    </Canvas>
+</UserControl>

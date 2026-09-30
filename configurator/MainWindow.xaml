@@ -1,0 +1,860 @@
+<Window x:Class="AdfConfigurator.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:AdfConfigurator.ViewModels"
+        xmlns:m="clr-namespace:AdfConfigurator.Models"
+        xmlns:views="clr-namespace:AdfConfigurator.Views"
+        Title="ADF Gamepad Mapper 配置器" Height="860" Width="1020"
+        WindowStartupLocation="CenterScreen"
+        PreviewMouseDown="Window_PreviewMouseDown"
+        PreviewMouseUp="Window_PreviewMouseUp"
+        PreviewMouseWheel="Window_PreviewMouseWheel">
+    <Window.DataContext>
+        <vm:MainViewModel/>
+    </Window.DataContext>
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolVis"/>
+        <vm:InverseBoolToVisibilityConverter x:Key="InvBoolVis"/>
+        <vm:AltModeIndexConverter x:Key="AltModeIndex"/>
+        <vm:DeployKindConverter x:Key="DeployKindText"/>
+
+        <!-- mouse-stick scalar editors, shared by base / layer / alt panels -->
+        <DataTemplate x:Key="MouseStickScalars" DataType="{x:Type m:StickMouseDto}">
+            <StackPanel>
+                <Label Content="响应曲线"/>
+                <ComboBox Width="180" HorizontalAlignment="Left"
+                          SelectedIndex="{Binding Curve}">
+                    <ComboBoxItem Content="线性"/>
+                    <ComboBoxItem Content="二次（推荐）"/>
+                    <ComboBoxItem Content="三次"/>
+                </ComboBox>
+                <Label Content="内死区"/>
+                <Slider Minimum="0" Maximum="0.6" TickFrequency="0.01"
+                        IsSnapToTickEnabled="True" Value="{Binding Deadzone}"/>
+                <Label Content="{Binding Deadzone, StringFormat={}{0:0.00}}"/>
+                <Label Content="基础速度 (像素/秒)"/>
+                <Slider Minimum="0" Maximum="3000" TickFrequency="50"
+                        IsSnapToTickEnabled="True" Value="{Binding BaseSpeed}"/>
+                <Label Content="{Binding BaseSpeed, StringFormat={}{0:0}}"/>
+                <Label Content="边缘加速启动点"/>
+                <Slider Minimum="0.5" Maximum="1" TickFrequency="0.01"
+                        IsSnapToTickEnabled="True" Value="{Binding EdgeThreshold}"/>
+                <Label Content="{Binding EdgeThreshold, StringFormat={}{0:0.00}}"/>
+                <Label Content="边缘加速倍率"/>
+                <Slider Minimum="1" Maximum="6" TickFrequency="0.1"
+                        IsSnapToTickEnabled="True" Value="{Binding EdgeMultiplier}"/>
+                <Label Content="{Binding EdgeMultiplier, StringFormat={}{0:0.0}x}"/>
+                <Label Content="加速时间 (毫秒)"/>
+                <Slider Minimum="0" Maximum="1000" TickFrequency="10"
+                        IsSnapToTickEnabled="True" Value="{Binding AccelTimeMs}"/>
+                <Label Content="{Binding AccelTimeMs}"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- modifier ("摇杆修饰键") alternate-behavior editors -->
+        <DataTemplate x:Key="AltStickPanel" DataType="{x:Type m:StickAltDto}">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="模式：" VerticalAlignment="Center"/>
+                    <ComboBox Width="180"
+                              SelectedIndex="{Binding Mode, Converter={StaticResource AltModeIndex}}">
+                        <ComboBoxItem Content="保持当前"/>
+                        <ComboBoxItem Content="键盘按键（八方向）"/>
+                        <ComboBoxItem Content="鼠标视角"/>
+                    </ComboBox>
+                </StackPanel>
+                <CheckBox Content="启用八方向（取消则四方向）" IsChecked="{Binding EightWay}"/>
+                <Label Content="键盘模式死区"/>
+                <Slider Minimum="0" Maximum="0.9" TickFrequency="0.01"
+                        IsSnapToTickEnabled="True" Value="{Binding KeysDeadzone}"/>
+                <Label Content="{Binding KeysDeadzone, StringFormat={}{0:0.00}}"/>
+                <ContentControl Content="{Binding Mouse}"
+                                ContentTemplate="{StaticResource MouseStickScalars}"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate x:Key="GestureRowTemplate">
+            <Grid Margin="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="64"/>
+                    <ColumnDefinition Width="*" MinWidth="60"/>
+                    <ColumnDefinition Width="44"/>
+                    <ColumnDefinition Width="40"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="{Binding Label}" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Column="1" Text="{Binding ActionText}" VerticalAlignment="Center"
+                           Foreground="#0055aa" TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding ActionText}"/>
+                <Button Grid.Column="2" Margin="2,0" Padding="0" Content="绑定"
+                        Command="{Binding DataContext.StartCapture,
+                                  RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding}"/>
+                <Button Grid.Column="3" Margin="2,0" Padding="0" Content="清除"
+                        Command="{Binding DataContext.ClearBinding,
+                                  RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding}"/>
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="BindingRowTemplate">
+            <Grid Margin="3,2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="86"/>
+                    <ColumnDefinition Width="*" MinWidth="48"/>
+                    <ColumnDefinition Width="44"/>
+                    <ColumnDefinition Width="40"/>
+                    <ColumnDefinition Width="40"/>
+                    <ColumnDefinition Width="56"/>
+                    <ColumnDefinition Width="52"/>
+                    <ColumnDefinition Width="52"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="{Binding Label}" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Column="1" Text="{Binding ActionText}" VerticalAlignment="Center"
+                           Foreground="#0055aa" FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding ActionText}"/>
+                <Button Grid.Column="2" Margin="2,0" Padding="0" Content="绑定"
+                        Command="{Binding DataContext.StartCapture,
+                                  RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding}"/>
+                <Button Grid.Column="3" Margin="2,0" Padding="0" Content="清除"
+                        Command="{Binding DataContext.ClearBinding,
+                                  RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding}"/>
+                <CheckBox Grid.Column="4" Margin="2,0" Content="切"
+                          VerticalAlignment="Center" HorizontalAlignment="Center"
+                          IsChecked="{Binding IsToggle}"
+                          IsEnabled="{Binding IsBound}"
+                          ToolTip="切换模式：点一下持续按住，再点一下松开"/>
+                <Button Grid.Column="5" Margin="2,0" Padding="0"
+                        Content="{Binding InterruptText}"
+                        IsEnabled="{Binding IsBound}"
+                        Command="{Binding DataContext.StartInterrupts,
+                                  RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding}"
+                        ToolTip="设置按下哪些手柄按钮可强制解除该键的按住状态"/>
+                <ToggleButton Grid.Column="6" x:Name="GestureBtn" Margin="2,0" Padding="0"
+                              Content="{Binding GestureButtonText}"
+                              IsChecked="{Binding IsGestureOpen, Mode=TwoWay}"
+                              IsEnabled="{Binding IsBound}"
+                              ToolTip="为同一按键设置短按 / 双击 / 长按的不同输出"/>
+                <Popup PlacementTarget="{Binding ElementName=GestureBtn}"
+                       Placement="Bottom" StaysOpen="False"
+                       IsOpen="{Binding IsGestureOpen, Mode=TwoWay}"
+                       AllowsTransparency="True">
+                    <Border Background="White" BorderBrush="#888" BorderThickness="1"
+                            CornerRadius="4" Margin="0,2,0,0" MinWidth="420" MaxWidth="520">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="8" ShadowDepth="2" Opacity="0.35"/>
+                        </Border.Effect>
+                        <StackPanel Margin="10">
+                            <TextBlock Text="手势输出" FontWeight="Bold"/>
+                            <TextBlock Text="{Binding GestureSummary}" TextWrapping="Wrap"
+                                       Margin="0,3,0,6" Foreground="#444"/>
+                            <ContentControl Content="{Binding TapRow}"
+                                            ContentTemplate="{StaticResource GestureRowTemplate}"/>
+                            <ContentControl Content="{Binding DoubleRow}"
+                                            ContentTemplate="{StaticResource GestureRowTemplate}"/>
+                            <ContentControl Content="{Binding LongRow}"
+                                            ContentTemplate="{StaticResource GestureRowTemplate}"/>
+                            <TextBlock Text="{Binding LongMs, StringFormat=长按判定：{0} 毫秒（按住超过此时长按才触发）}"
+                                       Margin="0,8,0,0"/>
+                            <Slider Minimum="50" Maximum="1000" TickFrequency="10"
+                                    IsSnapToTickEnabled="True"
+                                    Value="{Binding LongMs}"/>
+                            <TextBlock Text="{Binding DoubleMs, StringFormat=双击窗口：{0} 毫秒（两次按下间隔需小于此值）}"/>
+                            <Slider Minimum="80" Maximum="800" TickFrequency="10"
+                                    IsSnapToTickEnabled="True"
+                                    Value="{Binding DoubleMs}"/>
+                            <TextBlock TextWrapping="Wrap" Foreground="#777" Margin="0,4,0,0"
+                                       Text="说明：设置任一后，普通“按住”输出会等手势判定结束；快速松开=短按，快速再按=双击，按住超过阈值=长按（长按输出会保持到松开手柄键）。"/>
+                        </StackPanel>
+                    </Border>
+                </Popup>
+                <ToggleButton Grid.Column="7" x:Name="RadialBtn" Margin="2,0" Padding="0"
+                              Content="{Binding RadialButtonText}"
+                              IsChecked="{Binding IsRadialOpen, Mode=TwoWay}"
+                              Visibility="{Binding HasRadialSupport, Converter={StaticResource BoolVis}}"
+                              ToolTip="长按轮盘菜单：按住该键并拨动摇杆选方向，松开触发该方向的绑定"/>
+                <Popup PlacementTarget="{Binding ElementName=RadialBtn}"
+                       Placement="Bottom" StaysOpen="False"
+                       IsOpen="{Binding IsRadialOpen, Mode=TwoWay}"
+                       AllowsTransparency="True">
+                    <Border Background="White" BorderBrush="#888" BorderThickness="1"
+                            CornerRadius="4" Margin="0,2,0,0" MinWidth="420" MaxWidth="520">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="8" ShadowDepth="2" Opacity="0.35"/>
+                        </Border.Effect>
+                        <StackPanel Margin="10">
+                            <TextBlock Text="长按轮盘菜单" FontWeight="Bold"/>
+                            <CheckBox Margin="0,4,0,0" VerticalContentAlignment="Center"
+                                      IsChecked="{Binding IsRadial}">
+                                <TextBlock TextWrapping="Wrap"
+                                           Text="启用（快速点按仍触发主绑定；按住超过阈值后拨摇杆选方向，触发方式见下方单选）"/>
+                            </CheckBox>
+                            <TextBlock Text="{Binding RadialSummary}" TextWrapping="Wrap"
+                                       Margin="0,3,0,6" Foreground="#444"/>
+                            <views:RadialMenuPreview Width="168" Height="168" Margin="0,2,0,6"
+                                                     HorizontalAlignment="Center"
+                                                     Sectors="{Binding RadialRows}"
+                                                     WheelEnabled="{Binding IsRadial}"
+                                                     ToolTip="轮盘布局预览：按住手柄键到阈值后拨动摇杆选择扇区，松开触发；摇杆回中松开=取消"/>
+                            <ItemsControl ItemsSource="{Binding RadialRows}"
+                                          ItemTemplate="{StaticResource GestureRowTemplate}"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <TextBlock Text="选择摇杆：" VerticalAlignment="Center"/>
+                                <RadioButton Content="右摇杆" Margin="6,0"
+                                             IsChecked="{Binding IsRadialStickRight}"/>
+                                <RadioButton Content="左摇杆" Margin="6,0"
+                                             IsChecked="{Binding IsRadialStickLeft}"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                <TextBlock Text="触发方式：" VerticalAlignment="Center"/>
+                                <RadioButton Content="关闭触发" Margin="6,0"
+                                             ToolTip="松开轮盘键时触发当前选中的方向；摇杆回中时松开=取消"
+                                             IsChecked="{Binding RadialTriggerRelease}"/>
+                                <RadioButton Content="回中触发" Margin="6,0"
+                                             ToolTip="拨摇杆选中方向后，摇杆回中立即触发；松开轮盘键仅关闭"
+                                             IsChecked="{Binding RadialTriggerCenter}"/>
+                                <RadioButton Content="选择触发" Margin="6,0"
+                                             ToolTip="摇杆进入扇区即像真实键盘一样按住该方向键，回中/扫到其他扇区/松开轮盘键时释放"
+                                             IsChecked="{Binding RadialTriggerSelect}"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding RadialMs, StringFormat=长按判定：{0} 毫秒（按住超过此时才进入轮盘）}"
+                                       Margin="0,4,0,0"/>
+                            <Slider Minimum="100" Maximum="2000" TickFrequency="20"
+                                    IsSnapToTickEnabled="True"
+                                    Value="{Binding RadialMs}"/>
+                            <TextBlock TextWrapping="Wrap" Foreground="#777" Margin="0,4,0,0"
+                                       Text="说明：轮盘激活期间，用于选择的摇杆的普通输出会被临时屏蔽；方向绑定为单键瞬发（20ms 脉冲），如需组合键请先绑定到主键再快速点按。轮盘与手势/切换互斥，启用轮盘后优先生效。"/>
+                        </StackPanel>
+                    </Border>
+                </Popup>
+            </Grid>
+        </DataTemplate>
+    </Window.Resources>
+
+    <DockPanel>
+        <!-- bottom action bar -->
+        <Border DockPanel.Dock="Bottom" Background="#f0f0f0" Padding="8">
+            <DockPanel>
+                <Button DockPanel.Dock="Left"
+                        Content="{Binding MappingButtonText}"
+                        Background="{Binding MappingButtonColor}"
+                        Foreground="White" FontWeight="Bold"
+                        Width="120" Margin="0,0,8,0"
+                        MinHeight="52"
+                        Command="{Binding ToggleMapping}"/>
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" MinHeight="52">
+                    <Button Content="仅保存 JSON" Width="110" Margin="4,0"
+                            Command="{Binding SaveJson}"/>
+                    <Button Content="部署到游戏目录" Width="130" Margin="4,0"
+                            FontWeight="Bold" Command="{Binding Deploy}"/>
+                </StackPanel>
+                <TextBlock Text="{Binding Status}" VerticalAlignment="Center"
+                           TextWrapping="Wrap" Margin="4,0"/>
+            </DockPanel>
+        </Border>
+
+        <!-- capture banner -->
+        <Border DockPanel.Dock="Top" Background="#fff3cd" Padding="8"
+                Visibility="{Binding IsCapturing, Converter={StaticResource BoolVis}}">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding CapturePrompt}" FontWeight="Bold"
+                           VerticalAlignment="Center" Margin="0,0,12,0"
+                           TextWrapping="Wrap"/>
+                <Button Content="完成" FontWeight="Bold" Margin="4,0"
+                        Command="{Binding CommitCapture}"/>
+                <Button Content="取消（长按 Esc）" Command="{Binding CancelCapture}"/>
+            </StackPanel>
+        </Border>
+
+        <!-- interruptor learning banner -->
+        <Border DockPanel.Dock="Top" Background="#d9edf7" Padding="8"
+                Visibility="{Binding IsCapturingInterrupts, Converter={StaticResource BoolVis}}">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding InterruptPrompt}" FontWeight="Bold"
+                           VerticalAlignment="Center" Margin="0,0,12,0"
+                           TextWrapping="Wrap"/>
+                <Button Content="清空" Margin="4,0"
+                        Command="{Binding ClearInterrupts}"
+                        CommandParameter="{Binding InterruptRow}"/>
+                <Button Content="完成" Margin="4,0" FontWeight="Bold"
+                        Command="{Binding FinishInterrupts}"/>
+            </StackPanel>
+        </Border>
+
+        <!-- game selection -->
+        <GroupBox DockPanel.Dock="Top" Header="1. 选择游戏">
+            <StackPanel>
+                <Grid Margin="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Button Grid.Column="0" Content="浏览 exe…" Width="90"
+                            Command="{Binding BrowseGame}"/>
+                    <TextBox Grid.Column="1" Margin="6,0" IsReadOnly="True"
+                             VerticalAlignment="Center" Text="{Binding GamePath}"/>
+                    <Button Grid.Column="2" Content="打开已有 JSON" Width="110"
+                            Command="{Binding OpenJson}"/>
+                </Grid>
+                <TextBlock Text="{Binding GameInfo}" Margin="4" TextWrapping="Wrap"/>
+                <Grid Margin="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="170"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="90"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="注入方式：" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Column="1" Margin="6,0"
+                              ItemsSource="{Binding DeployKinds}"
+                              SelectedItem="{Binding DeployKind}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Converter={StaticResource DeployKindText}}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <TextBlock Grid.Column="2" Text="启动参数：" VerticalAlignment="Center"/>
+                    <TextBox Grid.Column="3" Margin="6,0"
+                             Text="{Binding Config.GameArgs, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Grid.Column="4" Text="轮询Hz：" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                    <TextBox Grid.Column="5" Margin="6,0"
+                             Text="{Binding Config.PollRateHz}"/>
+                    <CheckBox Grid.Column="6" Margin="12,0,0,0"
+                              Content="仅前台生效"
+                              IsChecked="{Binding Config.ForegroundOnly}"/>
+                </Grid>
+            </StackPanel>
+        </GroupBox>
+
+        <TabControl Margin="4">
+            <!-- ============ buttons ============ -->
+            <TabItem Header="2. 手柄按钮">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <GroupBox Grid.Row="0" Margin="4,2">
+                        <GroupBox.Header>
+                            <DockPanel Width="760">
+                                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"
+                                            HorizontalAlignment="Right">
+                                    <RadioButton x:Name="PadKindXbox" Content="Xbox"
+                                                 IsChecked="True" Margin="6,0"
+                                                 Checked="PadKindChanged"/>
+                                    <RadioButton x:Name="PadKindDs" Content="DualSense"
+                                                 Margin="6,0" Checked="PadKindChanged"/>
+                                </StackPanel>
+                                <TextBlock Text="手柄示意图（点击图上按钮直接绑定；绿色=已绑定；LT/RT、L2/R2 在“4. 扳机”页设置）"
+                                           VerticalAlignment="Center"/>
+                            </DockPanel>
+                        </GroupBox.Header>
+                        <Grid>
+                            <Viewbox MaxHeight="250" Margin="4">
+                                <Grid>
+                                    <views:GamepadXbox x:Name="DiagramXbox"/>
+                                    <views:GamepadDualSense x:Name="DiagramDs" Visibility="Collapsed"/>
+                                </Grid>
+                            </Viewbox>
+                            <!-- layer switcher, bottom-left over the diagram -->
+                            <StackPanel Orientation="Horizontal" Margin="10,6"
+                                        HorizontalAlignment="Left" VerticalAlignment="Bottom">
+                                <ComboBox Width="84" SelectedIndex="{Binding EditingLayerIndex}"
+                                          ToolTip="选择要查看/编辑的操作层（下方按键列表随之切换）">
+                                    <ComboBoxItem Content="基础层"/>
+                                    <ComboBoxItem Content="层 1"/>
+                                    <ComboBoxItem Content="层 2"/>
+                                    <ComboBoxItem Content="层 3"/>
+                                </ComboBox>
+                                <ComboBox Width="102" Margin="6,0,0,0"
+                                          IsEnabled="{Binding LayerSelected}"
+                                          SelectedIndex="{Binding SelectedLayerTriggerIndex}"
+                                          ToolTip="该层的触发源；多层同时触发时编号小的层优先">
+                                    <ComboBoxItem Content="无触发"/>
+                                    <ComboBoxItem Content="LT 扳机"/>
+                                    <ComboBoxItem Content="RT 扳机"/>
+                                    <ComboBoxItem Content="LB"/>
+                                    <ComboBoxItem Content="RB"/>
+                                    <ComboBoxItem Content="鼠标锁定"/>
+                                </ComboBox>
+                            </StackPanel>
+                        </Grid>
+                    </GroupBox>
+                    <Grid Grid.Row="1">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <DockPanel Grid.Row="0" Margin="8,4,8,0">
+                            <TextBlock Text="{Binding BindingListTitle}" FontWeight="Bold"
+                                       VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <!-- Grid Row "*" constrains the viewport height, so the
+                             vertical WrapPanel wraps into columns at the
+                             visible bottom edge instead of running off. -->
+                        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Disabled">
+                            <ItemsControl ItemsSource="{Binding VisibleButtonRows}"
+                                          ItemTemplate="{StaticResource BindingRowTemplate}"
+                                          Margin="6">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <!-- fill top-to-bottom, wrap into columns
+                                             extending right; scroll = next page -->
+                                        <WrapPanel Orientation="Vertical"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <!-- ============ left stick ============ -->
+            <TabItem Header="3a. 左摇杆（移动）">
+                <ScrollViewer>
+                    <StackPanel Name="LeftPanel">
+                        <!-- base stick settings (hidden while a layer is edited) -->
+                        <StackPanel Visibility="{Binding LayerSelected, Converter={StaticResource InvBoolVis}}">
+                        <GroupBox Header="模式">
+                            <ComboBox Width="220" HorizontalAlignment="Left"
+                                      SelectedIndex="{Binding Current.LeftStick.Mode}"
+                                      SelectionChanged="LeftModeChanged">
+                                <ComboBoxItem Content="键盘按键（八方向）"/>
+                                <ComboBoxItem Content="鼠标视角"/>
+                            </ComboBox>
+                        </GroupBox>
+
+                        <GroupBox Name="LeftKeysGroup" Header="键盘模式参数">
+                            <StackPanel>
+                                <CheckBox Content="启用八方向（取消则四方向）"
+                                          IsChecked="{Binding Current.LeftStick.Keys.EightWay}"/>
+                                <Label Content="死区"/>
+                                <Slider Minimum="0" Maximum="0.9" TickFrequency="0.01"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding Current.LeftStick.Keys.Deadzone}"/>
+                                <Label Content="{Binding Current.LeftStick.Keys.Deadzone, StringFormat={}{0:0.00}}"/>
+                                <ItemsControl ItemsSource="{Binding LeftDirRows}"
+                                              ItemTemplate="{StaticResource BindingRowTemplate}"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Name="LeftMouseGroup" Header="鼠标模式参数">
+                            <StackPanel>
+                                <Label Content="响应曲线"/>
+                                <ComboBox Width="220" HorizontalAlignment="Left"
+                                          SelectedIndex="{Binding Current.LeftStick.Mouse.Curve}">
+                                    <ComboBoxItem Content="线性"/>
+                                    <ComboBoxItem Content="二次（推荐）"/>
+                                    <ComboBoxItem Content="三次"/>
+                                </ComboBox>
+                                <Label Content="内死区"/>
+                                <Slider Minimum="0" Maximum="0.6" TickFrequency="0.01"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding Current.LeftStick.Mouse.Deadzone}"/>
+                                <Label Content="{Binding Current.LeftStick.Mouse.Deadzone, StringFormat={}{0:0.00}}"/>
+                                <Label Content="基础速度 (像素/秒)"/>
+                                <Slider Minimum="0" Maximum="3000" TickFrequency="50"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding Current.LeftStick.Mouse.BaseSpeed}"/>
+                                <Label Content="{Binding Current.LeftStick.Mouse.BaseSpeed, StringFormat={}{0:0}}"/>
+                                <Label Content="边缘加速启动点"/>
+                                <Slider Minimum="0.5" Maximum="1" TickFrequency="0.01"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding Current.LeftStick.Mouse.EdgeThreshold}"/>
+                                <Label Content="{Binding Current.LeftStick.Mouse.EdgeThreshold, StringFormat={}{0:0.00}}"/>
+                                <Label Content="边缘加速倍率"/>
+                                <Slider Minimum="1" Maximum="6" TickFrequency="0.1"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding Current.LeftStick.Mouse.EdgeMultiplier}"/>
+                                <Label Content="{Binding Current.LeftStick.Mouse.EdgeMultiplier, StringFormat={}{0:0.0}x}"/>
+                                <Label Content="加速时间 (毫秒)"/>
+                                <Slider Minimum="0" Maximum="1000" TickFrequency="10"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding Current.LeftStick.Mouse.AccelTimeMs}"/>
+                                <Label Content="{Binding Current.LeftStick.Mouse.AccelTimeMs}"/>
+                                <Border BorderBrush="#999" BorderThickness="1" Margin="4">
+                                    <Canvas Name="LeftCurveCanvas" Width="300" Height="160"
+                                            ClipToBounds="True"/>
+                                </Border>
+                            </StackPanel>
+                        </GroupBox>
+                        </StackPanel>
+
+                        <GroupBox Header="配置组 / 摇杆修饰键">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="配置组：" VerticalAlignment="Center"/>
+                                    <ComboBox Width="90" SelectedIndex="{Binding EditingLayerIndex}">
+                                        <ComboBoxItem Content="基础"/>
+                                        <ComboBoxItem Content="层 1"/>
+                                        <ComboBoxItem Content="层 2"/>
+                                        <ComboBoxItem Content="层 3"/>
+                                    </ComboBox>
+                                    <TextBlock Text="与「2. 手柄按钮」页联动；选层后本页编辑该层摇杆"
+                                               Foreground="#777" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                </StackPanel>
+
+                                <!-- base: stick modifier -->
+                                <StackPanel Visibility="{Binding LayerSelected, Converter={StaticResource InvBoolVis}}">
+                                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                        <TextBlock Text="修饰键：" VerticalAlignment="Center"/>
+                                        <ComboBox Width="170" ItemsSource="{Binding ModItems}"
+                                                  SelectedIndex="{Binding LeftModIndex}"/>
+                                    </StackPanel>
+                                    <CheckBox Content="按住修饰键时切换为以下配置（方向绑定不变）"
+                                              IsChecked="{Binding Current.LeftStick.ModOverride}"
+                                              Margin="0,4,0,0"/>
+                                    <ContentControl Content="{Binding Current.LeftStick.Alt}"
+                                                    ContentTemplate="{StaticResource AltStickPanel}"
+                                                    IsEnabled="{Binding Current.LeftStick.ModOverride}"/>
+                                </StackPanel>
+
+                                <!-- layer: stick override + modifier -->
+                                <StackPanel Visibility="{Binding LayerSelected, Converter={StaticResource BoolVis}}">
+                                    <CheckBox Content="当前层覆盖左摇杆（不勾则随基础层）"
+                                              IsChecked="{Binding SelectedLayer.LeftOverride}"
+                                              Margin="0,6,0,0"/>
+                                    <StackPanel IsEnabled="{Binding SelectedLayer.LeftOverride}">
+                                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                            <TextBlock Text="模式：" VerticalAlignment="Center"/>
+                                            <ComboBox Width="180"
+                                                      SelectedIndex="{Binding SelectedLayer.LeftStick.Mode}"
+                                                      SelectionChanged="LayerLeftModeChanged">
+                                                <ComboBoxItem Content="键盘按键（八方向）"/>
+                                                <ComboBoxItem Content="鼠标视角"/>
+                                            </ComboBox>
+                                        </StackPanel>
+                                        <CheckBox Content="启用八方向（取消则四方向）"
+                                                  IsChecked="{Binding SelectedLayer.LeftStick.Keys.EightWay}"/>
+                                        <Label Content="键盘模式死区"/>
+                                        <Slider Minimum="0" Maximum="0.9" TickFrequency="0.01"
+                                                IsSnapToTickEnabled="True"
+                                                Value="{Binding SelectedLayer.LeftStick.Keys.Deadzone}"/>
+                                        <Label Content="{Binding SelectedLayer.LeftStick.Keys.Deadzone, StringFormat={}{0:0.00}}"/>
+                                        <ContentControl Content="{Binding SelectedLayer.LeftStick.Mouse}"
+                                                        ContentTemplate="{StaticResource MouseStickScalars}"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                        <TextBlock Text="修饰键：" VerticalAlignment="Center"/>
+                                        <ComboBox Width="170" ItemsSource="{Binding ModItems}"
+                                                  SelectedIndex="{Binding LayerLeftModIndex}"/>
+                                    </StackPanel>
+                                    <CheckBox Content="按住修饰键时切换为以下配置（方向绑定不变）"
+                                              IsChecked="{Binding SelectedLayer.LeftStick.ModOverride}"
+                                              Margin="0,4,0,0"/>
+                                    <ContentControl Content="{Binding SelectedLayer.LeftStick.Alt}"
+                                                    ContentTemplate="{StaticResource AltStickPanel}"
+                                                    IsEnabled="{Binding SelectedLayer.LeftStick.ModOverride}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ============ right stick ============ -->
+            <TabItem Header="3b. 右摇杆（视角）">
+                <ScrollViewer>
+                    <StackPanel Name="RightPanel">
+                        <!-- base stick settings (hidden while a layer is edited) -->
+                        <StackPanel Visibility="{Binding LayerSelected, Converter={StaticResource InvBoolVis}}">
+                        <GroupBox Header="模式">
+                            <ComboBox Width="220" HorizontalAlignment="Left"
+                                      SelectedIndex="{Binding Current.RightStick.Mode}"
+                                      SelectionChanged="RightModeChanged">
+                                <ComboBoxItem Content="键盘按键（八方向）"/>
+                                <ComboBoxItem Content="鼠标视角"/>
+                            </ComboBox>
+                        </GroupBox>
+
+                        <GroupBox Name="RightKeysGroup" Header="键盘模式参数">
+                            <StackPanel>
+                                <CheckBox Content="启用八方向（取消则四方向）"
+                                          IsChecked="{Binding Current.RightStick.Keys.EightWay}"/>
+                                <Label Content="死区"/>
+                                <Slider Minimum="0" Maximum="0.9" TickFrequency="0.01"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding Current.RightStick.Keys.Deadzone}"/>
+                                <Label Content="{Binding Current.RightStick.Keys.Deadzone, StringFormat={}{0:0.00}}"/>
+                                <ItemsControl ItemsSource="{Binding RightDirRows}"
+                                              ItemTemplate="{StaticResource BindingRowTemplate}"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Name="RightMouseGroup" Header="鼠标模式参数">
+                            <StackPanel>
+                                <Label Content="响应曲线"/>
+                                <ComboBox Width="220" HorizontalAlignment="Left"
+                                          SelectedIndex="{Binding Current.RightStick.Mouse.Curve}">
+                                    <ComboBoxItem Content="线性"/>
+                                    <ComboBoxItem Content="二次（推荐）"/>
+                                    <ComboBoxItem Content="三次"/>
+                                </ComboBox>
+                                <Label Content="内死区"/>
+                                <Slider Minimum="0" Maximum="0.6" TickFrequency="0.01"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding Current.RightStick.Mouse.Deadzone}"/>
+                                <Label Content="{Binding Current.RightStick.Mouse.Deadzone, StringFormat={}{0:0.00}}"/>
+                                <Label Content="基础速度 (像素/秒)"/>
+                                <Slider Minimum="0" Maximum="3000" TickFrequency="50"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding Current.RightStick.Mouse.BaseSpeed}"/>
+                                <Label Content="{Binding Current.RightStick.Mouse.BaseSpeed, StringFormat={}{0:0}}"/>
+                                <Label Content="边缘加速启动点"/>
+                                <Slider Minimum="0.5" Maximum="1" TickFrequency="0.01"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding Current.RightStick.Mouse.EdgeThreshold}"/>
+                                <Label Content="{Binding Current.RightStick.Mouse.EdgeThreshold, StringFormat={}{0:0.00}}"/>
+                                <Label Content="边缘加速倍率"/>
+                                <Slider Minimum="1" Maximum="6" TickFrequency="0.1"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding Current.RightStick.Mouse.EdgeMultiplier}"/>
+                                <Label Content="{Binding Current.RightStick.Mouse.EdgeMultiplier, StringFormat={}{0:0.0}x}"/>
+                                <Label Content="加速时间 (毫秒)"/>
+                                <Slider Minimum="0" Maximum="1000" TickFrequency="10"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding Current.RightStick.Mouse.AccelTimeMs}"/>
+                                <Label Content="{Binding Current.RightStick.Mouse.AccelTimeMs}"/>
+                                <Border BorderBrush="#999" BorderThickness="1" Margin="4">
+                                    <Canvas Name="RightCurveCanvas" Width="300" Height="160"
+                                            ClipToBounds="True"/>
+                                </Border>
+                            </StackPanel>
+                        </GroupBox>
+                        </StackPanel>
+
+                        <GroupBox Header="配置组 / 摇杆修饰键">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="配置组：" VerticalAlignment="Center"/>
+                                    <ComboBox Width="90" SelectedIndex="{Binding EditingLayerIndex}">
+                                        <ComboBoxItem Content="基础"/>
+                                        <ComboBoxItem Content="层 1"/>
+                                        <ComboBoxItem Content="层 2"/>
+                                        <ComboBoxItem Content="层 3"/>
+                                    </ComboBox>
+                                    <TextBlock Text="与「2. 手柄按钮」页联动；选层后本页编辑该层摇杆"
+                                               Foreground="#777" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                </StackPanel>
+
+                                <!-- base: stick modifier -->
+                                <StackPanel Visibility="{Binding LayerSelected, Converter={StaticResource InvBoolVis}}">
+                                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                        <TextBlock Text="修饰键：" VerticalAlignment="Center"/>
+                                        <ComboBox Width="170" ItemsSource="{Binding ModItems}"
+                                                  SelectedIndex="{Binding RightModIndex}"/>
+                                    </StackPanel>
+                                    <CheckBox Content="按住修饰键时切换为以下配置（方向绑定不变）"
+                                              IsChecked="{Binding Current.RightStick.ModOverride}"
+                                              Margin="0,4,0,0"/>
+                                    <ContentControl Content="{Binding Current.RightStick.Alt}"
+                                                    ContentTemplate="{StaticResource AltStickPanel}"
+                                                    IsEnabled="{Binding Current.RightStick.ModOverride}"/>
+                                </StackPanel>
+
+                                <!-- layer: stick override + modifier -->
+                                <StackPanel Visibility="{Binding LayerSelected, Converter={StaticResource BoolVis}}">
+                                    <CheckBox Content="当前层覆盖右摇杆（典型：FPS 开镜低灵敏度；不勾则随基础层）"
+                                              IsChecked="{Binding SelectedLayer.RightOverride}"
+                                              Margin="0,6,0,0"/>
+                                    <StackPanel IsEnabled="{Binding SelectedLayer.RightOverride}">
+                                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                            <TextBlock Text="模式：" VerticalAlignment="Center"/>
+                                            <ComboBox Width="180"
+                                                      SelectedIndex="{Binding SelectedLayer.RightStick.Mode}"
+                                                      SelectionChanged="LayerRightModeChanged">
+                                                <ComboBoxItem Content="键盘按键（八方向）"/>
+                                                <ComboBoxItem Content="鼠标视角"/>
+                                            </ComboBox>
+                                        </StackPanel>
+                                        <CheckBox Content="启用八方向（取消则四方向）"
+                                                  IsChecked="{Binding SelectedLayer.RightStick.Keys.EightWay}"/>
+                                        <Label Content="键盘模式死区"/>
+                                        <Slider Minimum="0" Maximum="0.9" TickFrequency="0.01"
+                                                IsSnapToTickEnabled="True"
+                                                Value="{Binding SelectedLayer.RightStick.Keys.Deadzone}"/>
+                                        <Label Content="{Binding SelectedLayer.RightStick.Keys.Deadzone, StringFormat={}{0:0.00}}"/>
+                                        <ContentControl Content="{Binding SelectedLayer.RightStick.Mouse}"
+                                                        ContentTemplate="{StaticResource MouseStickScalars}"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                        <TextBlock Text="修饰键：" VerticalAlignment="Center"/>
+                                        <ComboBox Width="170" ItemsSource="{Binding ModItems}"
+                                                  SelectedIndex="{Binding LayerRightModIndex}"/>
+                                    </StackPanel>
+                                    <CheckBox Content="按住修饰键时切换为以下配置（方向绑定不变）"
+                                              IsChecked="{Binding SelectedLayer.RightStick.ModOverride}"
+                                              Margin="0,4,0,0"/>
+                                    <ContentControl Content="{Binding SelectedLayer.RightStick.Alt}"
+                                                    ContentTemplate="{StaticResource AltStickPanel}"
+                                                    IsEnabled="{Binding SelectedLayer.RightStick.ModOverride}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ============ triggers ============ -->
+            <TabItem Header="4. 扳机">
+                <ScrollViewer>
+                    <StackPanel>
+                        <GroupBox Header="左扳机 LT">
+                            <StackPanel>
+                                <CheckBox Content="启用"
+                                          IsChecked="{Binding Current.LeftTrigger.Enabled}"/>
+                                <Label Content="死区"/>
+                                <Slider Minimum="0" Maximum="0.5" TickFrequency="0.01"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding Current.LeftTrigger.Deadzone}"/>
+                                <Label Content="{Binding Current.LeftTrigger.Deadzone, StringFormat={}{0:0.00}}"/>
+                                <Label Content="触发阈值（越过死区后的行程比例）"/>
+                                <Slider Minimum="0" Maximum="1" TickFrequency="0.01"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding Current.LeftTrigger.Threshold}"/>
+                                <Label Content="{Binding Current.LeftTrigger.Threshold, StringFormat={}{0:0.00}}"/>
+                                <ContentControl Content="{Binding LeftTriggerRow}"
+                                                ContentTemplate="{StaticResource BindingRowTemplate}"/>
+                            </StackPanel>
+                        </GroupBox>
+                        <GroupBox Header="右扳机 RT">
+                            <StackPanel>
+                                <CheckBox Content="启用"
+                                          IsChecked="{Binding Current.RightTrigger.Enabled}"/>
+                                <Label Content="死区"/>
+                                <Slider Minimum="0" Maximum="0.5" TickFrequency="0.01"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding Current.RightTrigger.Deadzone}"/>
+                                <Label Content="{Binding Current.RightTrigger.Deadzone, StringFormat={}{0:0.00}}"/>
+                                <Label Content="触发阈值"/>
+                                <Slider Minimum="0" Maximum="1" TickFrequency="0.01"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding Current.RightTrigger.Threshold}"/>
+                                <Label Content="{Binding Current.RightTrigger.Threshold, StringFormat={}{0:0.00}}"/>
+                                <ContentControl Content="{Binding RightTriggerRow}"
+                                                ContentTemplate="{StaticResource BindingRowTemplate}"/>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ============ devices / test ============ -->
+            <TabItem Header="5. 设备与测试">
+                <ScrollViewer>
+                    <StackPanel>
+                        <GroupBox Header="配置文件（不同手柄可分别配置；空 GUID 对所有手柄生效）">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox Grid.Column="0"
+                                              ItemsSource="{Binding Profiles}"
+                                              DisplayMemberPath="Name"
+                                              SelectedIndex="{Binding CurrentIndex}"/>
+                                    <Button Grid.Column="1" Width="150" Margin="6,0"
+                                            Content="为下方手柄新建配置"
+                                            Command="{Binding NewProfile}"/>
+                                    <Button Grid.Column="2" Width="90"
+                                            Content="删除当前"
+                                            Command="{Binding RemoveProfile}"/>
+                                </Grid>
+                                <CheckBox Content="交换左右摇杆（swapSticks）" Margin="0,6"
+                                          IsChecked="{Binding Current.SwapSticks}"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="已连接手柄（SDL3）">
+                            <StackPanel>
+                                <ComboBox ItemsSource="{Binding ConnectedPads}"
+                                          DisplayMemberPath="Name"
+                                          SelectedItem="{Binding SelectedLivePad}"/>
+                                <Grid Margin="0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="60"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="50"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="左X"/>
+                                    <ProgressBar Grid.Column="1" Minimum="-1" Maximum="1"
+                                                 Value="{Binding PadLx, Mode=OneWay}"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding PadLxText}"/>
+                                </Grid>
+                                <Grid Margin="0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="60"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="50"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="左Y"/>
+                                    <ProgressBar Grid.Column="1" Minimum="-1" Maximum="1"
+                                                 Value="{Binding PadLy, Mode=OneWay}"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding PadLyText}"/>
+                                </Grid>
+                                <Grid Margin="0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="60"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="50"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="右X"/>
+                                    <ProgressBar Grid.Column="1" Minimum="-1" Maximum="1"
+                                                 Value="{Binding PadRx, Mode=OneWay}"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding PadRxText}"/>
+                                </Grid>
+                                <Grid Margin="0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="60"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="50"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="右Y"/>
+                                    <ProgressBar Grid.Column="1" Minimum="-1" Maximum="1"
+                                                 Value="{Binding PadRy, Mode=OneWay}"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding PadRyText}"/>
+                                </Grid>
+                                <Grid Margin="0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="60"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="50"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="LT"/>
+                                    <ProgressBar Grid.Column="1" Minimum="0" Maximum="1"
+                                                 Value="{Binding PadLt, Mode=OneWay}"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding PadLtText}"/>
+                                </Grid>
+                                <Grid Margin="0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="60"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="50"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="RT"/>
+                                    <ProgressBar Grid.Column="1" Minimum="0" Maximum="1"
+                                                 Value="{Binding PadRt, Mode=OneWay}"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding PadRtText}"/>
+                                </Grid>
+                                <TextBlock TextWrapping="Wrap">按下的按钮：<Run Text="{Binding PressedText, Mode=OneWay}"/></TextBlock>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

@@ -1,0 +1,23 @@
+# Build outputs
+build/
+artifacts/
+dist/
+/artifacts.zip
+*.zip
+
+# .NET
+configurator/bin/
+configurator/obj/
+*.user
+
+# Downloaded third-party sources (fetched automatically by CMake)
+third_party/_dl/
+
+# Private / unrelated workspaces
+.ota_work/
+.trae/
+.vscode/
+
+# OS cruft
+Thumbs.db
+Desktop.ini

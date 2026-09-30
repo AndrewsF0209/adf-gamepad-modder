@@ -1,0 +1,3 @@
+add_executable(adf_launcher WIN32 main.cpp)
+target_link_libraries(adf_launcher PRIVATE adfmapper_core)
+set_target_properties(adf_launcher PROPERTIES OUTPUT_NAME adf_launcher)
