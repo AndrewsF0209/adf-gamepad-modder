@@ -30,6 +30,8 @@ public sealed class BindingRow : ObservableObject
         TapRow = MakeGestureRow("短按", a => a.Tap, (a, v) => a.Tap = v);
         DoubleRow = MakeGestureRow("双击", a => a.DoubleTap, (a, v) => a.DoubleTap = v);
         LongRow = MakeGestureRow("长按", a => a.LongPress, (a, v) => a.LongPress = v);
+        PressRow = MakeGestureRow("按下", a => a.Press, (a, v) => a.Press = v);
+        ReleaseRow = MakeGestureRow("松开", a => a.Release, (a, v) => a.Release = v);
         if (!withRadial) return;
         string[] dirLabels = { "上", "右上", "右", "右下", "下", "左下", "左", "左上" };
         var rows = new BindingRow[8];
@@ -76,6 +78,8 @@ public sealed class BindingRow : ObservableObject
     public BindingRow? TapRow { get; }
     public BindingRow? DoubleRow { get; }
     public BindingRow? LongRow { get; }
+    public BindingRow? PressRow { get; }
+    public BindingRow? ReleaseRow { get; }
 
     // Radial menu editor (button rows only): 8 sector sub-rows + parameters.
     public IReadOnlyList<BindingRow>? RadialRows { get; }
@@ -228,6 +232,35 @@ public sealed class BindingRow : ObservableObject
         }
     }
 
+    // Edge-split timing: release pulse length / press linger after release.
+    public int ReleasePulseMs
+    {
+        get => Math.Clamp(_get().ReleasePulseMs, 1, 10000);
+        set
+        {
+            var a = _get();
+            value = Math.Clamp(value, 1, 10000);
+            if (a.ReleasePulseMs == value) return;
+            a.ReleasePulseMs = value;
+            _set(a);
+            Raise(nameof(ReleasePulseMs));
+        }
+    }
+
+    public int PressHoldMs
+    {
+        get => Math.Clamp(_get().PressHoldMs, 0, 10000);
+        set
+        {
+            var a = _get();
+            value = Math.Clamp(value, 0, 10000);
+            if (a.PressHoldMs == value) return;
+            a.PressHoldMs = value;
+            _set(a);
+            Raise(nameof(PressHoldMs));
+        }
+    }
+
     public int DoubleMs
     {
         get => Math.Clamp(_get().DoubleMs, 20, 2000);
@@ -251,6 +284,8 @@ public sealed class BindingRow : ObservableObject
         {
             var a = _get();
             var parts = new System.Collections.Generic.List<string>();
+            if (a.Press?.IsBound == true) parts.Add($"按下 → {a.Press.Display}");
+            if (a.Release?.IsBound == true) parts.Add($"松开 → {a.Release.Display}");
             if (a.Tap?.IsBound == true) parts.Add($"短按 → {a.Tap.Display}");
             if (a.DoubleTap?.IsBound == true) parts.Add($"双击 → {a.DoubleTap.Display}");
             if (a.LongPress?.IsBound == true) parts.Add($"长按 → {a.LongPress.Display}");

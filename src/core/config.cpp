@@ -20,8 +20,22 @@ bool SameFlat(const KeyAction& a, const KeyAction& b) {
 }
 
 bool SameFlat(const KeyAction::Part& a, const KeyAction::Part& b) {
-    return a.type == b.type && a.scancode == b.scancode &&
-           a.extended == b.extended && a.button == b.button && a.wheel == b.wheel;
+    if (!(a.type == b.type && a.scancode == b.scancode &&
+          a.extended == b.extended && a.button == b.button &&
+          a.wheel == b.wheel))
+        return false;
+    // Edge-split parts may carry a chord (e.g. Ctrl+Shift); its entries are
+    // flat, so one level of comparison is enough.
+    if (a.chord.size() != b.chord.size()) return false;
+    for (size_t i = 0; i < a.chord.size(); ++i) {
+        const auto& x = a.chord[i];
+        const auto& y = b.chord[i];
+        if (!(x.type == y.type && x.scancode == y.scancode &&
+              x.extended == y.extended && x.button == y.button &&
+              x.wheel == y.wheel))
+            return false;
+    }
+    return true;
 }
 
 KeyAction::Part ToPart(const KeyAction& a) {
@@ -31,6 +45,7 @@ KeyAction::Part ToPart(const KeyAction& a) {
     p.extended = a.extended;
     p.button = a.button;
     p.wheel = a.wheel;
+    for (const KeyAction& c : a.chord) p.chord.push_back(ToPart(c));
     return p;
 }
 
@@ -40,8 +55,11 @@ bool KeyAction::operator==(const KeyAction& o) const {
     if (!(type == o.type && scancode == o.scancode && extended == o.extended &&
           button == o.button && wheel == o.wheel && toggle == o.toggle &&
           interruptButtons == o.interruptButtons && longMs == o.longMs &&
-          doubleMs == o.doubleMs && SameFlat(tap, o.tap) &&
+          doubleMs == o.doubleMs &&
+          releasePulseMs == o.releasePulseMs &&
+          pressHoldMs == o.pressHoldMs && SameFlat(tap, o.tap) &&
           SameFlat(doubleTap, o.doubleTap) && SameFlat(longPress, o.longPress) &&
+          SameFlat(press, o.press) && SameFlat(release, o.release) &&
           radial == o.radial && radialMs == o.radialMs &&
           radialStick == o.radialStick && radialTrigger == o.radialTrigger))
         return false;
@@ -76,7 +94,19 @@ json ActionToJson(const KeyAction& a, bool flat = false) {
             j["type"] = "none";
             break;
     }
-    if (flat || a.type == KeyAction::None) return j;
+    // An unbound primary may still carry gesture/split/radial outputs, so
+    // only flat entries (which never do) return early.
+    if (a.type == KeyAction::None && flat) return j;
+    if (flat) {
+        // Edge-split parts (press/release) may carry a one-level chord
+        // (e.g. Ctrl+Shift); radial/gesture entries keep it empty.
+        if (!a.chord.empty()) {
+            json arr = json::array();
+            for (const KeyAction& c : a.chord) arr.push_back(ActionToJson(c, true));
+            j["chord"] = std::move(arr);
+        }
+        return j;
+    }
 
     if (a.toggle) j["toggle"] = true;
     if (!a.interruptButtons.empty())
@@ -92,8 +122,14 @@ json ActionToJson(const KeyAction& a, bool flat = false) {
         j["doubleTap"] = ActionToJson(a.doubleTap, true);
     if (a.longPress.type != KeyAction::None)
         j["longPress"] = ActionToJson(a.longPress, true);
+    if (a.press.type != KeyAction::None)
+        j["press"] = ActionToJson(a.press, true);
+    if (a.release.type != KeyAction::None)
+        j["release"] = ActionToJson(a.release, true);
     if (a.longMs != 300) j["longMs"] = a.longMs;
     if (a.doubleMs != 260) j["doubleMs"] = a.doubleMs;
+    if (a.releasePulseMs != 20) j["releasePulseMs"] = a.releasePulseMs;
+    if (a.pressHoldMs != 40) j["pressHoldMs"] = a.pressHoldMs;
     if (a.radial) {
         j["radial"] = true;
         json arr = json::array();
@@ -124,7 +160,24 @@ KeyAction ActionFromJson(const json& j, bool flat = false) {
         a.type = KeyAction::MouseWheel;
         a.wheel = j.value("wheel", 120);
     }
-    if (flat) return a;
+    if (flat) {
+        // One-level chord for edge-split parts; radial/gesture entries
+        // never carry one, so this is a no-op for them.
+        if (j.contains("chord") && j["chord"].is_array()) {
+            for (const auto& cj : j["chord"]) {
+                KeyAction::Part cp;
+                const KeyAction c = ActionFromJson(cj, true);
+                if (c.type == KeyAction::None) continue;
+                cp.type = static_cast<KeyAction::Type>(c.type);
+                cp.scancode = c.scancode;
+                cp.extended = c.extended;
+                cp.button = c.button;
+                cp.wheel = c.wheel;
+                a.chord.push_back(cp);
+            }
+        }
+        return a;
+    }
 
     a.toggle = j.value("toggle", false);
     if (j.contains("interrupts") && j["interrupts"].is_array()) {
@@ -148,8 +201,16 @@ KeyAction ActionFromJson(const json& j, bool flat = false) {
         a.doubleTap = ToPart(ActionFromJson(j["doubleTap"], true));
     if (j.contains("longPress"))
         a.longPress = ToPart(ActionFromJson(j["longPress"], true));
+    if (j.contains("press"))
+        a.press = ToPart(ActionFromJson(j["press"], true));
+    if (j.contains("release"))
+        a.release = ToPart(ActionFromJson(j["release"], true));
     a.longMs = std::clamp(j.value("longMs", a.longMs), 20, 10000);
     a.doubleMs = std::clamp(j.value("doubleMs", a.doubleMs), 20, 2000);
+    a.releasePulseMs =
+        std::clamp(j.value("releasePulseMs", a.releasePulseMs), 1, 10000);
+    a.pressHoldMs =
+        std::clamp(j.value("pressHoldMs", a.pressHoldMs), 0, 10000);
     a.radial = j.value("radial", false);
     if (j.contains("radialDirs") && j["radialDirs"].is_array()) {
         int i = 0;
@@ -394,8 +455,8 @@ bool Config::Load(const std::wstring& path, std::string& err) {
                 if (dj.contains("rightTrigger")) d.rightTrigger = TriggerFromJson(dj["rightTrigger"]);
                 const auto parseLayer = [](const json& lj, LayerConfig& lc) {
                     int h = lj.value("hold", -1);
-                    // -1 none, 0..15 pad button, 100 LT, 101 RT, 102 mouse-lock.
-                    lc.hold = (h >= 0 && h <= 15) || (h >= 100 && h <= 102) ? h : -1;
+                    // -1 none, 0..31 pad button, 100 LT, 101 RT, 102 mouse-lock.
+                    lc.hold = (h >= 0 && h < kMaxPadButtons) || (h >= 100 && h <= 102) ? h : -1;
                     lc.autoMouseLock = lj.value("autoMouseLock", false);
                     if (lj.contains("buttons") && lj["buttons"].is_object()) {
                         for (auto it = lj["buttons"].begin(); it != lj["buttons"].end(); ++it) {
@@ -414,6 +475,12 @@ bool Config::Load(const std::wstring& path, std::string& err) {
                     lc.leftOverride = lj.value("leftOverride", false);
                     if (lj.contains("leftStick"))
                         lc.left = StickFromJson(lj["leftStick"]);
+                    lc.leftTriggerOverride = lj.value("leftTriggerOverride", false);
+                    if (lj.contains("leftTrigger"))
+                        lc.leftTrigger = TriggerFromJson(lj["leftTrigger"]);
+                    lc.rightTriggerOverride = lj.value("rightTriggerOverride", false);
+                    if (lj.contains("rightTrigger"))
+                        lc.rightTrigger = TriggerFromJson(lj["rightTrigger"]);
                 };
                 if (dj.contains("layers") && dj["layers"].is_array()) {
                     int L = 0;
@@ -469,7 +536,8 @@ bool Config::Save(const std::wstring& path, std::string& err) const {
             bool anyLayer = false;
             for (const auto& l : d.layers)
                 if (l.hold != -1 || !l.buttons.empty() || l.rightOverride ||
-                    l.leftOverride)
+                    l.leftOverride || l.leftTriggerOverride ||
+                    l.rightTriggerOverride)
                     anyLayer = true;
             if (anyLayer) {
                 json arr = json::array();
@@ -486,6 +554,10 @@ bool Config::Save(const std::wstring& path, std::string& err) const {
                     lj["rightStick"] = StickToJson(l.right);
                     if (l.leftOverride) lj["leftOverride"] = true;
                     lj["leftStick"] = StickToJson(l.left);
+                    if (l.leftTriggerOverride) lj["leftTriggerOverride"] = true;
+                    lj["leftTrigger"] = TriggerToJson(l.leftTrigger);
+                    if (l.rightTriggerOverride) lj["rightTriggerOverride"] = true;
+                    lj["rightTrigger"] = TriggerToJson(l.rightTrigger);
                     arr.push_back(std::move(lj));
                 }
                 dj["layers"] = std::move(arr);

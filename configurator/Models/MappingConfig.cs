@@ -29,6 +29,16 @@ public class KeyActionDto
     public KeyActionDto? Tap { get; set; }
     public KeyActionDto? DoubleTap { get; set; }
     public KeyActionDto? LongPress { get; set; }
+    // Edge-split outputs: press edge pulses Press, release edge pulses
+    // Release; while either is set the primary hold is suppressed and the
+    // tap/double/long gesture machine is bypassed (radial > split > gesture).
+    public KeyActionDto? Press { get; set; }
+    public KeyActionDto? Release { get; set; }
+    // Edge-split timing (ms): Release fires as a pulse of ReleasePulseMs;
+    // after the release edge Press lingers PressHoldMs further (defaults
+    // match the engine: 20 / 40).
+    public int ReleasePulseMs { get; set; } = 20;
+    public int PressHoldMs { get; set; } = 40;
     public int LongMs { get; set; } = 300;
     public int DoubleMs { get; set; } = 260;
 
@@ -61,6 +71,8 @@ public class KeyActionDto
         c.Tap = Tap?.Clone();
         c.DoubleTap = DoubleTap?.Clone();
         c.LongPress = LongPress?.Clone();
+        c.Press = Press?.Clone();
+        c.Release = Release?.Clone();
         c.RadialDirs = RadialDirs.Select(x => x.Clone()).ToList();
         return c;
     }
@@ -70,7 +82,9 @@ public class KeyActionDto
 
     [JsonIgnore]
     public bool HasGesture =>
-        Tap?.IsBound == true || DoubleTap?.IsBound == true || LongPress?.IsBound == true;
+        Tap?.IsBound == true || DoubleTap?.IsBound == true ||
+        LongPress?.IsBound == true || Press?.IsBound == true ||
+        Release?.IsBound == true;
 
     [JsonIgnore]
     public bool HasRadial => Radial && RadialDirs.Any(d => d.IsBound);
@@ -208,7 +222,7 @@ public class LayerDto
     // Hold-to-layer ("按住切层"): while the activator is held, button
     // bindings resolve from Buttons first (slots absent here fall back to
     // the base bindings) and overridden sticks use these configs.
-    public int Hold { get; set; } = -1; // -1 none; 0..15 button; 100 LT; 101 RT; 102 mouse-lock
+    public int Hold { get; set; } = -1; // -1 none; 0..31 button; 100 LT; 101 RT; 102 mouse-lock
     // Legacy single-layer JSON field; migrated to Hold == 102 on load.
     public bool AutoMouseLock { get; set; }
     public Dictionary<int, KeyActionDto> Buttons { get; set; } = new();
@@ -216,6 +230,13 @@ public class LayerDto
     public StickDto RightStick { get; set; } = new();
     public bool LeftOverride { get; set; }
     public StickDto LeftStick { get; set; } = new();
+
+    // Triggers join the layer system: while the layer is active, an enabled
+    // override replaces that trigger's scalars + binding wholesale.
+    public bool LeftTriggerOverride { get; set; }
+    public TriggerDto LeftTrigger { get; set; } = new();
+    public bool RightTriggerOverride { get; set; }
+    public TriggerDto RightTrigger { get; set; } = new();
 
     public KeyActionDto ButtonAt(int i) =>
         Buttons.TryGetValue(i, out var a) ? a : new KeyActionDto();
@@ -230,6 +251,21 @@ public class LayerDto
         RightStick.Mouse.Enabled = true;
         LeftStick.Mode = 0;
         LeftStick.Keys.Enabled = true;
+        // Same for trigger overrides: the engine force-stops a trigger whose
+        // layer config is disabled, so "override on + trigger disabled"
+        // would silently kill that trigger while the layer is held.
+        LeftTrigger.Enabled = true;
+        RightTrigger.Enabled = true;
+    }
+
+    // Migrate older saves: an override flag with a disabled layer trigger
+    // was a trap (the trigger went dead while the layer was held); flip it
+    // on so existing profiles keep working after the fix. Called after a
+    // config JSON is loaded.
+    public void MigrateLegacyTriggers()
+    {
+        if (LeftTriggerOverride && !LeftTrigger.Enabled) LeftTrigger.Enabled = true;
+        if (RightTriggerOverride && !RightTrigger.Enabled) RightTrigger.Enabled = true;
     }
 }
 

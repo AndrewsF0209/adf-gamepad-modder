@@ -43,6 +43,7 @@ public sealed class MainViewModel : ObservableObject
         _config.Devices.Add(DeviceConfigDto.CreateDefault());
         Profiles = new ObservableCollection<DeviceConfigDto>(_config.Devices);
         RebuildRows();
+        TryAutoLoadLast();
 
         BrowseGame = new RelayCommand(BrowseGameExecutable);
         OpenJson = new RelayCommand(OpenJsonFile);
@@ -234,6 +235,18 @@ public sealed class MainViewModel : ObservableObject
 
     private void ToggleMappingNow()
     {
+        // Guard against a classic footgun: the configurator starts with a
+        // blank "Default" profile until a JSON is opened. Starting the
+        // resident engine with it maps nothing and looks like "mapping is
+        // dead".
+        bool blank = _config.Devices.All(d =>
+            d.Name == "Default" && string.IsNullOrEmpty(d.Guid));
+        if (blank)
+        {
+            Status = "当前是空白默认档案——请先打开你的配置 JSON，再启动常驻映射";
+            return;
+        }
+
         if (IsMappingActive)
         {
             ResidentMapper.Stop();
@@ -440,6 +453,7 @@ public sealed class MainViewModel : ObservableObject
                 Raise(nameof(LayerRightModIndex));
                 Raise(nameof(BindingListTitle));
                 RebuildRows();
+                RaiseTriggerProxies();
             }
         }
     }
@@ -463,30 +477,118 @@ public sealed class MainViewModel : ObservableObject
             ? "按键绑定"
             : $"按键绑定（层 {_editingLayerIndex}：仅列出差异，未设置的键回退到基础层）";
 
-    // Trigger combo index <-> LayerConfig.hold
-    // 0 none(-1) / 1 LT(100) / 2 RT(101) / 3 LB(9) / 4 RB(10) / 5 mouse-lock(102)
-    public int SelectedLayerTriggerIndex
+    // ---- trigger layer editing ---------------------------------------------
+    // Trigger scalars proxy the base or the selected layer's override so the
+    // 扳机页 follows the same 配置组 selection as the button list. The layer
+    // stores the trigger wholesale (scalars + binding); the override switch
+    // alone decides whether it is active in the engine.
+    private LayerDto? TrigLayer =>
+        _editingLayerIndex > 0 ? Current.Layers[_editingLayerIndex - 1] : null;
+
+    public bool LtOverrideEnabled
     {
-        get => SelectedLayer.Hold switch
-        {
-            100 => 1,
-            101 => 2,
-            9 => 3,
-            10 => 4,
-            102 => 5,
-            _ => 0,
-        };
+        get => TrigLayer?.LeftTriggerOverride ?? false;
         set
         {
-            SelectedLayer.Hold = value switch
-            {
-                1 => 100,
-                2 => 101,
-                3 => 9,
-                4 => 10,
-                5 => 102,
-                _ => -1,
-            };
+            var l = TrigLayer; if (l == null || l.LeftTriggerOverride == value) return;
+            l.LeftTriggerOverride = value;
+            if (value && !l.LeftTrigger.Enabled) { l.LeftTrigger.Enabled = true; Raise(nameof(LtEnabled)); }
+            Raise(nameof(LtOverrideEnabled));
+        }
+    }
+
+    public bool RtOverrideEnabled
+    {
+        get => TrigLayer?.RightTriggerOverride ?? false;
+        set
+        {
+            var l = TrigLayer; if (l == null || l.RightTriggerOverride == value) return;
+            l.RightTriggerOverride = value;
+            // Enabling the override implies a live layer trigger; leaving it
+            // disabled would force-stop RT whenever the layer is held.
+            if (value && !l.RightTrigger.Enabled) { l.RightTrigger.Enabled = true; Raise(nameof(RtEnabled)); }
+            Raise(nameof(RtOverrideEnabled));
+        }
+    }
+
+    public bool LtEnabled
+    {
+        get => (TrigLayer?.LeftTrigger ?? Current.LeftTrigger).Enabled;
+        set { var t = TrigLayer != null ? TrigLayer.LeftTrigger : Current.LeftTrigger; if (t.Enabled != value) { t.Enabled = value; Raise(nameof(LtEnabled)); } }
+    }
+
+    public bool RtEnabled
+    {
+        get => (TrigLayer?.RightTrigger ?? Current.RightTrigger).Enabled;
+        set { var t = TrigLayer != null ? TrigLayer.RightTrigger : Current.RightTrigger; if (t.Enabled != value) { t.Enabled = value; Raise(nameof(RtEnabled)); } }
+    }
+
+    public double LtDeadzone
+    {
+        get => (TrigLayer?.LeftTrigger ?? Current.LeftTrigger).Deadzone;
+        set { var t = TrigLayer != null ? TrigLayer.LeftTrigger : Current.LeftTrigger; if (t.Deadzone != value) { t.Deadzone = value; Raise(nameof(LtDeadzone)); } }
+    }
+
+    public double RtDeadzone
+    {
+        get => (TrigLayer?.RightTrigger ?? Current.RightTrigger).Deadzone;
+        set { var t = TrigLayer != null ? TrigLayer.RightTrigger : Current.RightTrigger; if (t.Deadzone != value) { t.Deadzone = value; Raise(nameof(RtDeadzone)); } }
+    }
+
+    public double LtThreshold
+    {
+        get => (TrigLayer?.LeftTrigger ?? Current.LeftTrigger).Threshold;
+        set { var t = TrigLayer != null ? TrigLayer.LeftTrigger : Current.LeftTrigger; if (t.Threshold != value) { t.Threshold = value; Raise(nameof(LtThreshold)); } }
+    }
+
+    public double RtThreshold
+    {
+        get => (TrigLayer?.RightTrigger ?? Current.RightTrigger).Threshold;
+        set { var t = TrigLayer != null ? TrigLayer.RightTrigger : Current.RightTrigger; if (t.Threshold != value) { t.Threshold = value; Raise(nameof(RtThreshold)); } }
+    }
+
+    private void RaiseTriggerProxies()
+    {
+        foreach (var n in new[]
+        {
+            nameof(LtOverrideEnabled), nameof(RtOverrideEnabled),
+            nameof(LtEnabled), nameof(RtEnabled),
+            nameof(LtDeadzone), nameof(RtDeadzone),
+            nameof(LtThreshold), nameof(RtThreshold),
+        }) Raise(n);
+    }
+
+    // Trigger combo: 无触发 / every visible pad button (d-pad, face, menu,
+    // sticks, shoulders, paddles, touchpad) / LT / RT / 鼠标锁定.
+    // LayerConfig.hold encodes: -1 none, 0..31 pad button, 100 LT, 101 RT,
+    // 102 mouse-lock — the engine reads ps.buttons[hold] for 0..31, so any
+    // button slot works as a layer activator.
+    public string[] LayerTriggerItems { get; } =
+        new[] { "无触发" }
+            .Concat(PadLayout.VisibleButtons.Select(i => PadLayout.ButtonNames[i]))
+            .Concat(new[] { "LT 扳机", "RT 扳机", "鼠标锁定" })
+            .ToArray();
+
+    private static int HoldToTriggerIndex(int hold) =>
+        hold == 100 ? PadLayout.VisibleButtons.Length + 1
+        : hold == 101 ? PadLayout.VisibleButtons.Length + 2
+        : hold == 102 ? PadLayout.VisibleButtons.Length + 3
+        : Array.IndexOf(PadLayout.VisibleButtons, hold) is int i && i >= 0 ? i + 1
+        : 0;
+
+    private static int TriggerIndexToHold(int index) =>
+        index <= 0 ? -1
+        : index <= PadLayout.VisibleButtons.Length ? PadLayout.VisibleButtons[index - 1]
+        : index == PadLayout.VisibleButtons.Length + 1 ? 100
+        : index == PadLayout.VisibleButtons.Length + 2 ? 101
+        : 102;
+
+    public int SelectedLayerTriggerIndex
+    {
+        get => HoldToTriggerIndex(SelectedLayer.Hold);
+        set
+        {
+            SelectedLayer.Hold = TriggerIndexToHold(value);
             Raise(nameof(SelectedLayerTriggerIndex));
         }
     }
@@ -579,10 +681,17 @@ public sealed class MainViewModel : ObservableObject
                 () => sk2.DirAt(idx), a => sk2.SetDir(idx, a)));
         }
 
+        // Trigger rows follow the layer selection just like the button list:
+        // RebuildRows re-runs on EditingLayerIndex changes, so the same row
+        // targets the base or the layer's trigger action wholesale.
         LeftTriggerRow = new BindingRow("LT 扳机",
-            () => d.LeftTrigger.Action, a => d.LeftTrigger.Action = a);
+            () => lay != null ? lay.LeftTrigger.Action : d.LeftTrigger.Action,
+            a => { if (lay != null) lay.LeftTrigger.Action = a;
+                   else d.LeftTrigger.Action = a; });
         RightTriggerRow = new BindingRow("RT 扳机",
-            () => d.RightTrigger.Action, a => d.RightTrigger.Action = a);
+            () => lay != null ? lay.RightTrigger.Action : d.RightTrigger.Action,
+            a => { if (lay != null) lay.RightTrigger.Action = a;
+                   else d.RightTrigger.Action = a; });
         Raise(nameof(LeftTriggerRow));
         Raise(nameof(RightTriggerRow));
     }
@@ -659,21 +768,47 @@ public sealed class MainViewModel : ObservableObject
         WriteIndented = true,
     };
 
-    private void OpenJsonFile()
+    // Remembers the user's json so a fresh instance auto-loads it — the
+    // engine must never be toggled against the blank default profile again.
+    private static string LastJsonPathFile => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "AdfConfigurator", "last_json.txt");
+
+    private void RememberLastJson(string path)
     {
-        var dlg = new OpenFileDialog
+        try
         {
-            Title = "打开 adf_mapper.json",
-            Filter = "ADF 配置 (*.json)|*.json|所有文件|*.*",
-        };
-        if (dlg.ShowDialog() != true) return;
+            Directory.CreateDirectory(Path.GetDirectoryName(LastJsonPathFile)!);
+            File.WriteAllText(LastJsonPathFile, path);
+        }
+        catch { /* best-effort */ }
+    }
+
+    private void TryAutoLoadLast()
+    {
+        try
+        {
+            if (!File.Exists(LastJsonPathFile)) return;
+            string path = File.ReadAllText(LastJsonPathFile).Trim();
+            if (path.Length == 0 || !File.Exists(path)) return;
+            if (LoadConfigFrom(path, silent: true))
+                Status = $"已自动载入上次配置：{path}";
+        }
+        catch { /* keep the blank default */ }
+    }
+
+    private bool LoadConfigFrom(string file, bool silent = false)
+    {
         try
         {
             var cfg = JsonSerializer.Deserialize<ConfigDto>(
-                File.ReadAllText(dlg.FileName), JsonOpts);
+                File.ReadAllText(file), JsonOpts);
             if (cfg == null) throw new InvalidDataException("配置为空");
             if (cfg.Devices.Count == 0)
                 cfg.Devices.Add(DeviceConfigDto.CreateDefault());
+            foreach (var d in cfg.Devices)
+                foreach (var l in d.Layers)
+                    l.MigrateLegacyTriggers();
             _config = cfg;
             Profiles.Clear();
             foreach (var d in _config.Devices) Profiles.Add(d);
@@ -685,16 +820,30 @@ public sealed class MainViewModel : ObservableObject
             if (!string.IsNullOrEmpty(cfg.GameExe))
             {
                 string candidate = Path.Combine(
-                    Path.GetDirectoryName(dlg.FileName)!, cfg.GameExe);
+                    Path.GetDirectoryName(file)!, cfg.GameExe);
                 if (File.Exists(candidate)) LoadGame(candidate);
                 else GamePath = cfg.GameExe;
             }
-            Status = $"已加载 {dlg.FileName}";
+            Status = $"已加载 {file}";
+            return true;
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, "配置加载失败");
+            if (!silent) MessageBox.Show(ex.Message, "配置加载失败");
+            return false;
         }
+    }
+
+    private void OpenJsonFile()
+    {
+        var dlg = new OpenFileDialog
+        {
+            Title = "打开 adf_mapper.json",
+            Filter = "ADF 配置 (*.json)|*.json|所有文件|*.*",
+        };
+        if (dlg.ShowDialog() != true) return;
+        if (!LoadConfigFrom(dlg.FileName)) return;
+        RememberLastJson(dlg.FileName);
     }
 
     private void SaveJsonFile()
@@ -707,6 +856,7 @@ public sealed class MainViewModel : ObservableObject
         };
         if (dlg.ShowDialog() != true) return;
         SaveConfig(dlg.FileName);
+        RememberLastJson(dlg.FileName);
         Status = $"已保存 {dlg.FileName}";
     }
 

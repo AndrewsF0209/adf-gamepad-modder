@@ -16,6 +16,12 @@
           Condition="Exists('..\artifacts\x64\SDL3.dll')"
           CopyToOutputDirectory="PreserveNewest"
           Link="SDL3.dll" />
+    <!-- Resident-mapping engine: P/Invoke loads it from the app directory,
+         so it must publish next to the exe (same trick as SDL3.dll). -->
+    <None Include="..\artifacts\x64\adf_resident.dll"
+          Condition="Exists('..\artifacts\x64\adf_resident.dll')"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="adf_resident.dll" />
   </ItemGroup>
 
 </Project>

@@ -53,8 +53,15 @@ struct Slot {
     int g = kGIdle;
     bool gHeld = false;          // hold/long output currently pressed
     KeyAction gHeldAction;
+    // Split-mode combo timing: the release-edge pulse fired while gHeld was
+    // still down (modifier + key = a real chord); gHeld lingers until
+    // tHoldUntil — the binding's pressHoldMs past the release edge — then
+    // goes up. Cancelled if the pad button gets pressed again first.
+    bool gPendingRelease = false;
+    std::chrono::steady_clock::time_point tHoldUntil;
     bool pulsing = false;        // momentary tap/double output
     KeyAction pulseAction;
+    std::chrono::milliseconds pulseDur{20}; // duration of the active pulse
     std::chrono::steady_clock::time_point tDown;
     std::chrono::steady_clock::time_point tPulse;
     std::chrono::steady_clock::time_point tDoubleUntil;
@@ -238,13 +245,15 @@ private:
             Release(s.pulseAction);
             s.pulsing = false;
         }
+        s.gPendingRelease = false;
         s.g = kGIdle;
     }
 
     // Momentary tap/double action: press now, auto-release a few ticks later
     // so old games that poll the keyboard still see the key as held.
     void StartPulse(Slot& s, const KeyAction& a,
-                    std::chrono::steady_clock::time_point now) {
+                    std::chrono::steady_clock::time_point now,
+                    std::chrono::milliseconds dur = kPulseDur) {
         if (a.type == KeyAction::None) return;
         if (s.pulsing) {
             Release(s.pulseAction);
@@ -253,6 +262,7 @@ private:
         Press(a);
         s.pulseAction = a;
         s.tPulse = now;
+        s.pulseDur = dur;
         s.pulsing = true;
     }
 
@@ -268,23 +278,94 @@ private:
         const bool hasTap = desired.tap.type != KeyAction::None;
         const bool hasDouble = desired.doubleTap.type != KeyAction::None;
         const bool hasLong = desired.longPress.type != KeyAction::None;
-        const bool gesture = bound && (hasTap || hasDouble || hasLong);
+        const bool hasPress = desired.press.type != KeyAction::None;
+        const bool hasRelease = desired.release.type != KeyAction::None;
+        // Gestures and edge-split work even with an unbound primary action:
+        // the quick-tap outcome falls back to the primary itself, so "no tap
+        // configured" means "tap = the key's own binding".
+        const bool split = hasPress || hasRelease;
+        const bool gesture = !split && (hasTap || hasDouble || hasLong);
+        const KeyAction tapAct =
+            hasTap ? KeyAction(desired.tap) : desired;
         // Radial menu: only meaningful on real pad buttons (a selection
         // stick is required). Takes priority over gestures and toggle.
         const bool rad = idx < kButtonSlots && desired.radial &&
                          AnyRadialBound(desired);
 
         // Expire a momentary pulse regardless of state.
-        if (s.pulsing && now - s.tPulse >= kPulseDur) {
+        if (s.pulsing && now - s.tPulse >= s.pulseDur) {
             Release(s.pulseAction);
             s.pulsing = false;
         }
+        // Split combo timing: the modifier lingers the binding's pressHoldMs
+        // past the release edge (well past the release pulse itself) before
+        // it goes up, giving slow games time to sample the chord.
+        if (s.gPendingRelease && now >= s.tHoldUntil) {
+            if (s.gHeld) {
+                Release(s.gHeldAction);
+                s.gHeld = false;
+            }
+            s.gPendingRelease = false;
+        }
 
         // Binding changed underneath any active output: drop the old ones.
+        // If the change lands exactly on the physical release tick (the
+        // classic "layer drops as its hold key lets go with the action
+        // button"), complete the OLD binding's release edge first —
+        // otherwise the edge-split / quick-tap output would be silently
+        // swallowed by the swap.
         const bool sameBinding = s.action == desired;
         if (!sameBinding) {
+            const bool relEdge = !on && s.phys;
+            const bool oldSplit = s.action.press.type != KeyAction::None ||
+                                  s.action.release.type != KeyAction::None;
+            bool edgeDone = false;
+            if (relEdge && oldSplit &&
+                s.action.release.type != KeyAction::None) {
+                StartPulse(s, KeyAction(s.action.release), now,
+                           std::chrono::milliseconds(s.action.releasePulseMs));
+                if (s.pulsing && s.gHeld) {
+                    s.gPendingRelease = true; // combo timing: hold modifier
+                    s.tHoldUntil =
+                        now + std::chrono::milliseconds(s.action.pressHoldMs);
+                } else if (s.gHeld) {
+                    Release(s.gHeldAction);
+                    s.gHeld = false;
+                }
+                s.g = kGIdle;
+                edgeDone = true;
+            } else if (relEdge && !oldSplit && s.g == kGPending) {
+                const KeyAction oldTap =
+                    s.action.tap.type != KeyAction::None
+                        ? KeyAction(s.action.tap) : s.action;
+                StartPulse(s, oldTap, now);
+                s.g = kGIdle;
+                edgeDone = true;
+            }
             if (s.active) Release(s.action);
-            ReleaseGestureOutputs(s);
+            if (edgeDone) {
+                s.phys = false; // edge consumed; don't re-fire on new binding
+                if (s.gHeld && !s.gPendingRelease) {
+                    Release(s.gHeldAction);
+                    s.gHeld = false;
+                }
+            } else {
+                ReleaseGestureOutputs(s);
+                // Mid-hold binding swap: the press edge already passed, so
+                // an edge-split binding that turned on underneath a held
+                // button (layer activates after the action button is down,
+                // or flickers at its threshold) would never hold `press` and
+                // its release edge would fire bare. Re-establish the held
+                // press output right now — the later release edge then still
+                // sees gHeld and keeps the modifier down through the pulse.
+                if (on && hasPress) {
+                    KeyAction p = KeyAction(desired.press);
+                    Press(p);
+                    s.gHeldAction = p;
+                    s.gHeld = true;
+                    s.gPendingRelease = false;
+                }
+            }
             if (s.rHeldActive) {
                 Release(s.rHeldAction);
                 s.rHeldActive = false;
@@ -292,6 +373,7 @@ private:
             s.active = false;
             s.r = kRIdle;
             s.rSector = -1;
+            s.action = desired;
         }
 
         if (priming_) {
@@ -307,9 +389,18 @@ private:
             s.r = kRIdle;
             s.rSector = -1;
             s.phys = on;
-            if (on && bound) {
+            if (on && (bound || split)) {
                 // Mirror a still-held button on return, no gesture timing.
-                if (!toggling && !rad) {
+                // Split slots mirror their `press` mapping (held like a real
+                // key), never the suppressed primary.
+                if (split) {
+                    if (hasPress) {
+                        KeyAction p = KeyAction(desired.press);
+                        Press(p);
+                        s.gHeldAction = p;
+                        s.gHeld = true;
+                    }
+                } else if (!toggling && !rad) {
                     Press(desired);
                     s.action = desired;
                     s.active = true;
@@ -388,11 +479,48 @@ private:
                 s.r = kRIdle;
                 s.rSector = -1;
             }
+        } else if (split) {
+            // Edge-split: the press edge holds `press` down like a real key
+            // (kept for as long as the pad button stays physically held, via
+            // the gHeld channel so binding-change / priming / ReleaseAll all
+            // clean it up). The release edge fires `release` as a pulse while
+            // `press` is STILL down, so the game sees a proper chord with
+            // timing (e.g. Ctrl down … Ctrl+Q for releasePulseMs … Ctrl up
+            // pressHoldMs past the release edge); gPendingRelease
+            // defers the modifier drop to that deadline. The primary hold
+            // stays suppressed while either edge action is configured.
+            s.action = desired;
+            if (on && !s.phys) {
+                s.gPendingRelease = false;
+                if (hasPress && !s.gHeld) {
+                    KeyAction p = KeyAction(desired.press);
+                    Press(p);
+                    s.gHeldAction = p;
+                    s.gHeld = true;
+                }
+            } else if (!on && s.phys) {
+                if (hasRelease) {
+                    StartPulse(s, KeyAction(desired.release), now,
+                               std::chrono::milliseconds(
+                                   desired.releasePulseMs));
+                    if (s.pulsing && s.gHeld) {
+                        s.gPendingRelease = true;
+                        s.tHoldUntil = now + std::chrono::milliseconds(
+                                                  desired.pressHoldMs);
+                    } else if (s.gHeld) {
+                        Release(s.gHeldAction);
+                        s.gHeld = false;
+                    }
+                } else if (s.gHeld) {
+                    Release(s.gHeldAction);
+                    s.gHeld = false;
+                }
+            }
         } else if (gesture) {
             s.action = desired;
             // Double-tap wait window can expire while the button is up.
             if (s.g == kGWaitDouble && now >= s.tDoubleUntil) {
-                StartPulse(s, desired.tap, now); // no-op when unbound
+                StartPulse(s, tapAct, now); // tap = primary when unset
                 s.g = kGIdle;
             }
 
@@ -427,7 +555,7 @@ private:
                         s.tDoubleUntil =
                             now + std::chrono::milliseconds(desired.doubleMs);
                     } else {
-                        StartPulse(s, desired.tap, now);
+                        StartPulse(s, tapAct, now); // tap = primary when unset
                         s.g = kGIdle;
                     }
                 } else if (s.g == kGActive) {
@@ -550,7 +678,10 @@ private:
     void ApplyTrigger(const Trigger& t, float value, int slot) {
         static const KeyAction kNoAction{};
         static const Vec2 kZero{};
-        if (!t.enabled || t.action.type == KeyAction::None) {
+        // An unbound primary action is fine: edge-split / gesture outputs
+        // still work through ApplySlot, so only a disabled trigger forces
+        // the slot off.
+        if (!t.enabled) {
             ApplySlot(slot, false, kNoAction, kZero);
             return;
         }
@@ -709,8 +840,15 @@ private:
         else
             ApplyMouseStick(rightR.mouse, rightEff, dt);
 
-        ApplyTrigger(dev.leftTrigger, ps.lt, kLeftTriggerSlot);
-        ApplyTrigger(dev.rightTrigger, ps.rt, kRightTriggerSlot);
+        // Triggers follow the layer system: an active layer's override
+        // replaces the trigger wholesale (including switching it off); old
+        // outputs drop through the sameBinding check in ApplySlot.
+        const Trigger& ltCfg =
+            lay && lay->leftTriggerOverride ? lay->leftTrigger : dev.leftTrigger;
+        const Trigger& rtCfg =
+            lay && lay->rightTriggerOverride ? lay->rightTrigger : dev.rightTrigger;
+        ApplyTrigger(ltCfg, ps.lt, kLeftTriggerSlot);
+        ApplyTrigger(rtCfg, ps.rt, kRightTriggerSlot);
 
         for (int i = 0; i < kButtonSlots; ++i)
             prevButtons_[i] = ps.buttons[i];

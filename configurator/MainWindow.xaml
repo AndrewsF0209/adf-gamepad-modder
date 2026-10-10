@@ -138,8 +138,7 @@
                 <ToggleButton Grid.Column="6" x:Name="GestureBtn" Margin="2,0" Padding="0"
                               Content="{Binding GestureButtonText}"
                               IsChecked="{Binding IsGestureOpen, Mode=TwoWay}"
-                              IsEnabled="{Binding IsBound}"
-                              ToolTip="为同一按键设置短按 / 双击 / 长按的不同输出"/>
+                              ToolTip="为同一按键设置短按 / 双击 / 长按的不同输出（短按未设时＝按键本身的映射）"/>
                 <Popup PlacementTarget="{Binding ElementName=GestureBtn}"
                        Placement="Bottom" StaysOpen="False"
                        IsOpen="{Binding IsGestureOpen, Mode=TwoWay}"
@@ -153,6 +152,10 @@
                             <TextBlock Text="手势输出" FontWeight="Bold"/>
                             <TextBlock Text="{Binding GestureSummary}" TextWrapping="Wrap"
                                        Margin="0,3,0,6" Foreground="#444"/>
+                            <ContentControl Content="{Binding PressRow}"
+                                            ContentTemplate="{StaticResource GestureRowTemplate}"/>
+                            <ContentControl Content="{Binding ReleaseRow}"
+                                            ContentTemplate="{StaticResource GestureRowTemplate}"/>
                             <ContentControl Content="{Binding TapRow}"
                                             ContentTemplate="{StaticResource GestureRowTemplate}"/>
                             <ContentControl Content="{Binding DoubleRow}"
@@ -168,8 +171,17 @@
                             <Slider Minimum="80" Maximum="800" TickFrequency="10"
                                     IsSnapToTickEnabled="True"
                                     Value="{Binding DoubleMs}"/>
+                            <TextBlock Text="{Binding ReleasePulseMs, StringFormat=松开脉冲：{0} 毫秒（松开映射按下后持续此时长）}"
+                                       Margin="0,8,0,0"/>
+                            <Slider Minimum="5" Maximum="500" TickFrequency="5"
+                                    IsSnapToTickEnabled="True"
+                                    Value="{Binding ReleasePulseMs}"/>
+                            <TextBlock Text="{Binding PressHoldMs, StringFormat=按下残留：{0} 毫秒（松开沿之后按下映射再保持此时长才释放，0＝立即释放）}"/>
+                            <Slider Minimum="0" Maximum="1000" TickFrequency="10"
+                                    IsSnapToTickEnabled="True"
+                                    Value="{Binding PressHoldMs}"/>
                             <TextBlock TextWrapping="Wrap" Foreground="#777" Margin="0,4,0,0"
-                                       Text="说明：设置任一后，普通“按住”输出会等手势判定结束；快速松开=短按，快速再按=双击，按住超过阈值=长按（长按输出会保持到松开手柄键）。"/>
+                                       Text="说明：按下/松开＝边缘拆分：按下瞬间按下并保持（手柄键按住多久就持续输出多久），松开瞬间在按下映射仍保持的同时发出松开映射的脉冲（时长＝「松开脉冲」），按下映射在其后再保持「按下残留」时长才释放——游戏收到有时序的组合键（如 Ctrl 按住 → Ctrl+Q 持续松开脉冲时长 → Ctrl 再保持按下残留时长后松开）；只配松开映射时松开瞬间发一次独立脉冲（主“按住”输出被抑制，且优先于短按/双击/长按）。设置短按/双击/长按任一后，普通“按住”输出会等手势判定结束：快速松开=短按，快速再按=双击，按住超过阈值=长按（长按输出保持到松开手柄键）；未设置短按时，短按＝该按键本身的映射（清除绑定后仍可只用手势）。"/>
                         </StackPanel>
                     </Border>
                 </Popup>
@@ -376,18 +388,22 @@
                                     <ComboBoxItem Content="层 2"/>
                                     <ComboBoxItem Content="层 3"/>
                                 </ComboBox>
-                                <ComboBox Width="102" Margin="6,0,0,0"
+                                <ComboBox Width="112" Margin="6,0,0,0"
                                           IsEnabled="{Binding LayerSelected}"
                                           SelectedIndex="{Binding SelectedLayerTriggerIndex}"
-                                          ToolTip="该层的触发源；多层同时触发时编号小的层优先">
-                                    <ComboBoxItem Content="无触发"/>
-                                    <ComboBoxItem Content="LT 扳机"/>
-                                    <ComboBoxItem Content="RT 扳机"/>
-                                    <ComboBoxItem Content="LB"/>
-                                    <ComboBoxItem Content="RB"/>
-                                    <ComboBoxItem Content="鼠标锁定"/>
-                                </ComboBox>
+                                          ItemsSource="{Binding LayerTriggerItems}"
+                                          ToolTip="该层的触发源（十字键/动作键/肩键/扳机等均可）；多层同时触发时编号小的层优先"/>
                             </StackPanel>
+                            <!-- live held-keys monitor, bottom-right over the diagram -->
+                            <Border HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                    Margin="10,6" Padding="6,3" CornerRadius="3"
+                                    Background="#55000000">
+                                <TextBlock x:Name="HeldKeysText" FontFamily="Consolas"
+                                           FontSize="12" Foreground="#444"
+                                           MaxWidth="300" TextWrapping="Wrap"
+                                           Text="按键：—"
+                                           ToolTip="实时显示当前按下的键盘和鼠标按键（包括映射引擎注入的按键），多键同时显示；松开后灰色残留 0.8 秒"/>
+                            </Border>
                         </Grid>
                     </GroupBox>
                     <Grid Grid.Row="1">
@@ -710,38 +726,57 @@
             <TabItem Header="4. 扳机">
                 <ScrollViewer>
                     <StackPanel>
+                        <GroupBox Header="配置组 / 扳机">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="配置组：" VerticalAlignment="Center"/>
+                                <ComboBox Width="90" SelectedIndex="{Binding EditingLayerIndex}">
+                                    <ComboBoxItem Content="基础"/>
+                                    <ComboBoxItem Content="层 1"/>
+                                    <ComboBoxItem Content="层 2"/>
+                                    <ComboBoxItem Content="层 3"/>
+                                </ComboBox>
+                                <TextBlock Text="与「2. 手柄按钮」页联动；选层后编辑该层的扳机覆盖"
+                                           Foreground="#777" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
                         <GroupBox Header="左扳机 LT">
                             <StackPanel>
+                                <CheckBox Content="层内覆盖：该层激活时以下方参数与绑定整体替换基础扳机"
+                                          IsChecked="{Binding LtOverrideEnabled}"
+                                          Visibility="{Binding LayerSelected, Converter={StaticResource BoolVis}}"/>
                                 <CheckBox Content="启用"
-                                          IsChecked="{Binding Current.LeftTrigger.Enabled}"/>
+                                          IsChecked="{Binding LtEnabled}"/>
                                 <Label Content="死区"/>
                                 <Slider Minimum="0" Maximum="0.5" TickFrequency="0.01"
                                         IsSnapToTickEnabled="True"
-                                        Value="{Binding Current.LeftTrigger.Deadzone}"/>
-                                <Label Content="{Binding Current.LeftTrigger.Deadzone, StringFormat={}{0:0.00}}"/>
+                                        Value="{Binding LtDeadzone}"/>
+                                <Label Content="{Binding LtDeadzone, StringFormat={}{0:0.00}}"/>
                                 <Label Content="触发阈值（越过死区后的行程比例）"/>
                                 <Slider Minimum="0" Maximum="1" TickFrequency="0.01"
                                         IsSnapToTickEnabled="True"
-                                        Value="{Binding Current.LeftTrigger.Threshold}"/>
-                                <Label Content="{Binding Current.LeftTrigger.Threshold, StringFormat={}{0:0.00}}"/>
+                                        Value="{Binding LtThreshold}"/>
+                                <Label Content="{Binding LtThreshold, StringFormat={}{0:0.00}}"/>
                                 <ContentControl Content="{Binding LeftTriggerRow}"
                                                 ContentTemplate="{StaticResource BindingRowTemplate}"/>
                             </StackPanel>
                         </GroupBox>
                         <GroupBox Header="右扳机 RT">
                             <StackPanel>
+                                <CheckBox Content="层内覆盖：该层激活时以下方参数与绑定整体替换基础扳机"
+                                          IsChecked="{Binding RtOverrideEnabled}"
+                                          Visibility="{Binding LayerSelected, Converter={StaticResource BoolVis}}"/>
                                 <CheckBox Content="启用"
-                                          IsChecked="{Binding Current.RightTrigger.Enabled}"/>
+                                          IsChecked="{Binding RtEnabled}"/>
                                 <Label Content="死区"/>
                                 <Slider Minimum="0" Maximum="0.5" TickFrequency="0.01"
                                         IsSnapToTickEnabled="True"
-                                        Value="{Binding Current.RightTrigger.Deadzone}"/>
-                                <Label Content="{Binding Current.RightTrigger.Deadzone, StringFormat={}{0:0.00}}"/>
+                                        Value="{Binding RtDeadzone}"/>
+                                <Label Content="{Binding RtDeadzone, StringFormat={}{0:0.00}}"/>
                                 <Label Content="触发阈值"/>
                                 <Slider Minimum="0" Maximum="1" TickFrequency="0.01"
                                         IsSnapToTickEnabled="True"
-                                        Value="{Binding Current.RightTrigger.Threshold}"/>
-                                <Label Content="{Binding Current.RightTrigger.Threshold, StringFormat={}{0:0.00}}"/>
+                                        Value="{Binding RtThreshold}"/>
+                                <Label Content="{Binding RtThreshold, StringFormat={}{0:0.00}}"/>
                                 <ContentControl Content="{Binding RightTriggerRow}"
                                                 ContentTemplate="{StaticResource BindingRowTemplate}"/>
                             </StackPanel>

@@ -24,7 +24,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # Stage prebuilt native components: all three proxy DLLs + the launcher,
 # one folder per architecture (old 32-bit games like RA2 need x86).
-$nativeFiles = @('winmm.dll', 'version.dll', 'dinput8.dll', 'adf_launcher.exe')
+$nativeFiles = @('winmm.dll', 'version.dll', 'dinput8.dll', 'adf_launcher.exe', 'adf_resident.dll')
 foreach ($arch in @('x64', 'x86')) {
     $src = Join-Path $repo "artifacts\$arch"
     $dst = Join-Path $pub "native\$arch"

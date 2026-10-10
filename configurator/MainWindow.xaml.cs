@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
@@ -27,6 +28,7 @@ public partial class MainWindow : Window
 
     private const uint MapkVkToVsc = 0;
     private const uint MapkVkToChar = 2;
+    private const uint MapkVscToVkEx = 3;
 
     private const int WmKeyDown = 0x0100;
     private const int WmKeyUp = 0x0101;
@@ -58,6 +60,7 @@ public partial class MainWindow : Window
             _vm.OnWindowClosing();
             _captureSettleTimer?.Stop();
             if (_llHook != IntPtr.Zero) UnhookWindowsHookEx(_llHook);
+            if (_mouseHook != IntPtr.Zero) UnhookWindowsHookEx(_mouseHook);
             _vm.DisposePad();
         };
     }
@@ -69,6 +72,11 @@ public partial class MainWindow : Window
         // navigation, so they never reach a normal HwndSource hook.
         _llProc = LowLevelKeyCallback;
         _llHook = SetWindowsHookExW(WhKeyboardLl, _llProc, IntPtr.Zero, 0);
+        // Same for mouse buttons: the engine's release-action pulse (e.g. an
+        // injected left click) only lasts ~20 ms, the linger render makes it
+        // visible; the global hook also captures injected button events.
+        _mouseProc = LowLevelMouseCallback;
+        _mouseHook = SetWindowsHookExW(WhMouseLl, _mouseProc, IntPtr.Zero, 0);
     }
 
     private void PadKindChanged(object sender, RoutedEventArgs e)
@@ -97,16 +105,29 @@ public partial class MainWindow : Window
     }
 
     private const int WhKeyboardLl = 13;
+    private const int WhMouseLl = 14;
     private const int HcAction = 0;
     private const uint LlkhfExtended = 0x01;
 
+    private const int WmLButtonDown = 0x0201, WmLButtonUp = 0x0202;
+    private const int WmRButtonDown = 0x0204, WmRButtonUp = 0x0205;
+    private const int WmMButtonDown = 0x0207, WmMButtonUp = 0x0208;
+    private const int WmXButtonDown = 0x020B, WmXButtonUp = 0x020C;
+
     private IntPtr _llHook;
     private LowLevelKeyboardProc? _llProc;
+    private IntPtr _mouseHook;
+    private LowLevelMouseProc? _mouseProc;
 
     private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+    private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr SetWindowsHookExW(int idHook, LowLevelKeyboardProc lpfn,
+                                                   IntPtr hMod, uint dwThreadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetWindowsHookExW(int idHook, LowLevelMouseProc lpfn,
                                                    IntPtr hMod, uint dwThreadId);
 
     [DllImport("user32.dll")]
@@ -128,15 +149,190 @@ public partial class MainWindow : Window
 
     private IntPtr LowLevelKeyCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
-        if (nCode == HcAction && _vm.IsCapturing)
+        if (nCode == HcAction)
         {
             int msg = (int)(long)wParam;
             bool up = msg is WmKeyUp or WmSysKeyUp;
             var k = Marshal.PtrToStructure<KeyboardLlHookStruct>(lParam);
-            HandleRawKey(k.VkCode, k.ScanCode, (k.Flags & LlkhfExtended) != 0, up);
-            return (IntPtr)1; // swallow every key while capturing
+            // Engine-injected keys use KEYEVENTF_SCANCODE, which arrives at
+            // the hook with vkCode = 0 — resolve the VK from the scancode.
+            int vk = k.VkCode;
+            if (vk == 0)
+            {
+                uint vsc = (uint)k.ScanCode |
+                           ((k.Flags & LlkhfExtended) != 0 ? 0xE000u : 0u);
+                vk = (int)MapVirtualKeyW(vsc, MapkVscToVkEx);
+            }
+            MonitorSet(vk, VkName(vk), !up);
+            if (_vm.IsCapturing)
+            {
+                HandleRawKey(k.VkCode, k.ScanCode, (k.Flags & LlkhfExtended) != 0, up);
+                return (IntPtr)1; // swallow every key while capturing
+            }
         }
         return CallNextHookEx(_llHook, nCode, wParam, lParam);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MousePoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MouseLlHookStruct
+    {
+        public MousePoint Pt;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public IntPtr ExtraInfo;
+    }
+
+    private IntPtr LowLevelMouseCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode == HcAction)
+        {
+            int msg = (int)(long)wParam;
+            int id;
+            bool up;
+            switch (msg)
+            {
+                case WmLButtonDown: case WmLButtonUp:
+                    id = MonMouseBase; up = msg == WmLButtonUp; break;
+                case WmRButtonDown: case WmRButtonUp:
+                    id = MonMouseBase + 1; up = msg == WmRButtonUp; break;
+                case WmMButtonDown: case WmMButtonUp:
+                    id = MonMouseBase + 2; up = msg == WmMButtonUp; break;
+                case WmXButtonDown: case WmXButtonUp:
+                {
+                    var m = Marshal.PtrToStructure<MouseLlHookStruct>(lParam);
+                    id = MonMouseBase + (((m.MouseData >> 16) & 0xFFFF) == 2 ? 4 : 3);
+                    up = msg == WmXButtonUp;
+                    break;
+                }
+                default:
+                    return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
+            }
+            MonitorSet(id, MouseName(id), !up);
+        }
+        return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
+    }
+
+    private static string MouseName(int id) => (id - MonMouseBase) switch
+    {
+        0 => "鼠标左键",
+        1 => "鼠标右键",
+        2 => "鼠标中键",
+        3 => "鼠标侧键1",
+        _ => "鼠标侧键2",
+    };
+
+    // ---- live held-keys monitor (diagram bottom-right) ----------------------
+    // The global low-level hooks also see events injected by the mapping
+    // engine (SendInput), so this shows exactly what the game receives —
+    // keyboard AND mouse buttons, multiple at once, each with its own state.
+    private const int MonMouseBase = 256; // monitor ids for mouse buttons
+
+    private sealed class MonitorKey
+    {
+        public int Id;
+        public string Name = "";
+        public bool Held;                    // currently physically held
+        public DateTime ReleasedAt;          // UtcNow of the release edge
+    }
+
+    // One independent entry per key (never overwrite a shared string —
+    // composites like Ctrl+Shift+LMB must coexist, each lingering on its own).
+    private readonly List<MonitorKey> _monKeys = new();
+    private DispatcherTimer? _monTimer;
+    private static readonly TimeSpan MonLinger = TimeSpan.FromMilliseconds(800);
+
+    private void MonitorSet(int id, string name, bool held)
+    {
+        if (HeldKeysText == null || id < 0) return;
+        try
+        {
+            var k = _monKeys.FirstOrDefault(x => x.Id == id);
+            if (held)
+            {
+                if (k == null)
+                {
+                    k = new MonitorKey { Id = id, Name = name };
+                    _monKeys.Add(k);
+                }
+                k.Held = true;
+                k.Name = name;
+            }
+            else
+            {
+                if (k == null || !k.Held) return; // stray release / auto-repeat
+                k.Held = false;
+                k.ReleasedAt = DateTime.UtcNow;
+                EnsureMonTimer();
+            }
+            RenderMonitor();
+        }
+        catch (Exception ex)
+        {
+            // A hook callback must never throw: Windows silently removes a
+            // misbehaving low-level hook, killing all monitoring.
+            System.Diagnostics.Debug.WriteLine("MonitorSet: " + ex);
+        }
+    }
+
+    private void EnsureMonTimer()
+    {
+        if (_monTimer != null) return;
+        _monTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(40) };
+        _monTimer.Tick += (_, _) => { try { RenderMonitor(); } catch { } };
+        _monTimer.Start();
+    }
+
+    private void RenderMonitor()
+    {
+        if (HeldKeysText == null) return;
+        var now = DateTime.UtcNow;
+        _monKeys.RemoveAll(k => !k.Held && now - k.ReleasedAt >= MonLinger);
+        HeldKeysText.Inlines.Clear();
+        HeldKeysText.Inlines.Add(new Run("按键：") { Foreground = Brushes.DimGray });
+        if (_monKeys.Count == 0)
+        {
+            _monTimer?.Stop();
+            HeldKeysText.Inlines.Add(new Run("—") { Foreground = Brushes.DarkGray });
+            System.Windows.Automation.AutomationProperties.SetName(
+                HeldKeysText, "按键：—");
+            return;
+        }
+        // Re-render the composite: held keys black, released-but-lingering
+        // keys grey, in press order.
+        var plain = new System.Text.StringBuilder("按键：");
+        bool first = true;
+        foreach (var k in _monKeys)
+        {
+            if (!first)
+            {
+                HeldKeysText.Inlines.Add(new Run(" + ") { Foreground = Brushes.Gray });
+                plain.Append(" + ");
+            }
+            first = false;
+            HeldKeysText.Inlines.Add(new Run(k.Name)
+            {
+                Foreground = k.Held ? Brushes.Black : Brushes.DarkGray
+            });
+            plain.Append(k.Name);
+        }
+        // Mirror the visible text onto the automation name (Inlines are not
+        // always aggregated into the default UIA name).
+        System.Windows.Automation.AutomationProperties.SetName(
+            HeldKeysText, plain.ToString());
+    }
+
+    private static string VkName(int vk)
+    {
+        var key = KeyInterop.KeyFromVirtualKey(vk);
+        return key == Key.None ? $"0x{vk:X2}" : key.ToString();
     }
 
     private void OnTimer()

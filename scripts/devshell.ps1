@@ -11,3 +11,8 @@ Import-Module $devshell
 $vsArch = if ($Arch -eq 'x86') { 'x86' } else { 'amd64' }
 Enter-VsDevShell -VsInstallPath $buildTools -Arch $vsArch -HostArch amd64 `
     -SkipAutomaticLocation | Out-Null
+# Enter-VsDevShell intermittently fails (batch expansion chokes on paths with
+# spaces); if INCLUDE/LIB stayed empty, set them manually.
+if (-not $env:INCLUDE -or -not $env:LIB) {
+    & (Join-Path $PSScriptRoot 'vsenv.ps1') -Arch $Arch
+}

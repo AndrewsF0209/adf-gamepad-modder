@@ -51,12 +51,30 @@ struct KeyAction {
         bool extended = false;
         int button = 1;   // mouse button 1..5
         int wheel = 120;  // +/- 120
+        // Chord entries for the edge-split outputs (press/release): fired
+        // together with the primary (e.g. Ctrl + Shift). Entries stay flat.
+        std::vector<Part> chord;
     };
     Part tap;
     Part doubleTap;
     Part longPress;
+    // Edge-split outputs: when either is configured the slot works in
+    // "split" mode — `press` is held down like a real key for as long as the
+    // pad button stays pressed; on release `release` fires as a 20 ms pulse
+    // while `press` is STILL down, so the game sees a timed chord
+    // (e.g. Ctrl down … Ctrl+Q … Ctrl lingers 40 ms past the release edge,
+    // then goes up). The primary hold output is suppressed (same "takes over
+    // the slot" semantics as gestures).
+    // Priority: radial > split > gesture > toggle.
+    Part press;
+    Part release;
     int longMs = 300;
     int doubleMs = 260;
+    // Edge-split timing (ms), user-tunable per binding: `release` fires as a
+    // pulse of releasePulseMs; after the release edge `press` lingers
+    // pressHoldMs further before going up (defaults 20 / 40).
+    int releasePulseMs = 20;
+    int pressHoldMs = 40;
 
     // Radial ("wheel") menu: hold the pad button past radialMs, tilt the
     // chosen stick toward one of 8 sectors, release to fire that sector's
@@ -78,7 +96,10 @@ struct KeyAction {
     KeyAction() = default;
     KeyAction(const Part& p)
         : type(p.type), scancode(p.scancode), extended(p.extended),
-          button(p.button), wheel(p.wheel) {}
+          button(p.button), wheel(p.wheel) {
+        // Carry the edge-split chord so Press()/Release() fire it too.
+        for (const Part& c : p.chord) chord.emplace_back(c);
+    }
 
     bool operator==(const KeyAction& o) const;
 };
@@ -147,6 +168,13 @@ struct LayerConfig {
     Stick right;
     bool leftOverride = false;
     Stick left;
+    // Triggers join the layer system: while the layer is active, an enabled
+    // override replaces that trigger's scalars + binding wholesale (the
+    // trigger can also be switched off inside the layer via enabled=false).
+    bool leftTriggerOverride = false;
+    Trigger leftTrigger;
+    bool rightTriggerOverride = false;
+    Trigger rightTrigger;
 };
 
 struct DeviceConfig {
