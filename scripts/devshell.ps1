@@ -12,7 +12,10 @@ $vsArch = if ($Arch -eq 'x86') { 'x86' } else { 'amd64' }
 Enter-VsDevShell -VsInstallPath $buildTools -Arch $vsArch -HostArch amd64 `
     -SkipAutomaticLocation | Out-Null
 # Enter-VsDevShell intermittently fails (batch expansion chokes on paths with
-# spaces); if INCLUDE/LIB stayed empty, set them manually.
-if (-not $env:INCLUDE -or -not $env:LIB) {
+# spaces); if INCLUDE/LIB stayed empty — or still point at the other
+# architecture's libs (e.g. a prior x64 pass in the same session) — set them
+# manually.
+$wantLib = if ($Arch -eq 'x86') { 'lib\x86' } else { 'lib\x64' }
+if (-not $env:INCLUDE -or -not $env:LIB -or ($env:LIB -notlike "*$wantLib*")) {
     & (Join-Path $PSScriptRoot 'vsenv.ps1') -Arch $Arch
 }

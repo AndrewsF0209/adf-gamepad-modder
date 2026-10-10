@@ -33,6 +33,7 @@
 ### 构建与脚本
 
 - 新增 `scripts/vsenv.ps1`：手动组装 MSVC + Windows SDK 环境，修复安装路径含空格时 VS DevShell 加载失败、`INCLUDE`/`LIB` 全空导致构建报错的问题。
+- `scripts/devshell.ps1` 兜底校验 LIB 架构与目标一致，修复同一会话内先 x64 后 x86 构建时复用 x64 库路径导致 SDL x86 链接失败的问题。
 - 配置器工程与发布脚本补齐 `adf_resident.dll`，发布包不再缺常驻映射组件。
 
 ## [1.0] - 2026-09-30
