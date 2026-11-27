@@ -28,8 +28,16 @@ std::wstring g_lastErr;
 // exactly what we want for resident mode: real keyboard/mouse injection.
 
 int ResidentRun(const std::wstring& jsonPath, std::string& err) {
-    // foregroundOnly=false (map for all apps), foregroundPid=0 (unused).
-    return RunMapperFromFile(jsonPath, 0,
+    // Load here (instead of RunMapperFromFile) so resident mode can force
+    // foregroundOnly off: fgPid is 0 in this deployment, and an on-disk
+    // foregroundOnly=true would make the engine's per-tick foreground gate
+    // evaluate false forever — mapping silently dead in every application.
+    // The configurator's "常驻映射已启动（foregroundOnly 已忽略）" promise
+    // and the comment above both describe exactly this behavior.
+    Config cfg;
+    if (!cfg.Load(jsonPath, err)) return 1;
+    cfg.foregroundOnly = false;
+    return RunMapper(cfg, 0,
         []() { return g_state.load() == 1; }, err);
 }
 
