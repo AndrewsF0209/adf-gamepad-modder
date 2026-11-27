@@ -238,9 +238,11 @@ public sealed class MainViewModel : ObservableObject
         // Guard against a classic footgun: the configurator starts with a
         // blank "Default" profile until a JSON is opened. Starting the
         // resident engine with it maps nothing and looks like "mapping is
-        // dead".
+        // dead". Blank = no device carries any actual output binding — the
+        // profile Name/Guid can't be used here (users keep the default name,
+        // and an empty Guid is the engine's "match any pad" wildcard).
         bool blank = _config.Devices.All(d =>
-            d.Name == "Default" && string.IsNullOrEmpty(d.Guid));
+            d.Buttons.Values.All(b => b.Type == "none" || string.IsNullOrEmpty(b.Type)));
         if (blank)
         {
             Status = "当前是空白默认档案——请先点右上角「打开已有 JSON」载入配置，再启动常驻映射";
@@ -807,16 +809,13 @@ public sealed class MainViewModel : ObservableObject
             if (cfg.Devices.Count == 0)
                 cfg.Devices.Add(DeviceConfigDto.CreateDefault());
             foreach (var d in cfg.Devices)
-            {
                 foreach (var l in d.Layers)
                     l.MigrateLegacyTriggers();
-                // Older configs never carried a profile Guid (the field was
-                // added later and nothing assigned it). Stamp one on load so
-                // the blank-profile guard in ToggleMappingNow can tell a real
-                // file from the never-touched default.
-                if (string.IsNullOrEmpty(d.Guid))
-                    d.Guid = System.Guid.NewGuid().ToString("N");
-            }
+            // NOTE: do NOT stamp device Guids here. The C# profile Guid and
+            // the C++ device-match guid are the same JSON field, and the
+            // engine treats an empty guid as "match any pad" (MatchDevice
+            // fallback). Assigning one would silently bind the profile to a
+            // nonexistent pad and kill all mapping.
             _config = cfg;
             Profiles.Clear();
             foreach (var d in _config.Devices) Profiles.Add(d);
