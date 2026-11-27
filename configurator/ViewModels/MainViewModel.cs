@@ -243,7 +243,7 @@ public sealed class MainViewModel : ObservableObject
             d.Name == "Default" && string.IsNullOrEmpty(d.Guid));
         if (blank)
         {
-            Status = "当前是空白默认档案——请先打开你的配置 JSON，再启动常驻映射";
+            Status = "当前是空白默认档案——请先点右上角「打开已有 JSON」载入配置，再启动常驻映射";
             return;
         }
 
@@ -807,8 +807,16 @@ public sealed class MainViewModel : ObservableObject
             if (cfg.Devices.Count == 0)
                 cfg.Devices.Add(DeviceConfigDto.CreateDefault());
             foreach (var d in cfg.Devices)
+            {
                 foreach (var l in d.Layers)
                     l.MigrateLegacyTriggers();
+                // Older configs never carried a profile Guid (the field was
+                // added later and nothing assigned it). Stamp one on load so
+                // the blank-profile guard in ToggleMappingNow can tell a real
+                // file from the never-touched default.
+                if (string.IsNullOrEmpty(d.Guid))
+                    d.Guid = System.Guid.NewGuid().ToString("N");
+            }
             _config = cfg;
             Profiles.Clear();
             foreach (var d in _config.Devices) Profiles.Add(d);
